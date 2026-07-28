@@ -11,6 +11,18 @@
 
 ---
 
+## コードベース調査で見つかった課題（要対応）
+
+2026-07-28 のプロジェクト全体調査で見つかった問題。マイルストーンAに着手する前に方針を決めておきたいもの。
+
+- [ ] **`npm run test` が現状必ず失敗する**: `tests/` ディレクトリが1つも存在しないのに `vitest.config.ts` の `include` は `tests/**/*.test.ts` を指定しており、`passWithNoTests` オプションも未設定。Vitest はテストファイル0件だとデフォルトでエラー終了する。→ 最初のテストファイルを追加するか `passWithNoTests: true` を設定する。
+- [ ] **GK（ゴールキーパー）ロールの扱いを決める**: `specification/features_3_match_rules.md` は「GK1人＋フィールドプレイヤー2人」を前提にしているが、`TODO.md`（本ドキュメント）と `src/types.ts` の `Role` 型（`"FW" | "MF" | "DF"`）はGKを含まない。仕様書間で矛盾しているため、GKを導入するか、FW/MF/DFのみで進めるか先に決める。
+- [ ] **`docs/api.md` / `docs/development_guide.md` を実装に合わせて更新する**: 古いクラスベース設計（`class Ball`, `TeamType = "home"|"away"`, `Vector2D` など）のまま放置されており、現在の `src/types.ts`（関数型・`TeamSide = "A"|"B"`・`Vec2`）と一致しない。このまま参照すると誤った実装をしてしまう。
+- [ ] **`Pitch.goalWidth` のハードコードを解消する**: `src/game/pitch.ts` で `this.goalWidth = 3.66` と直書きされており、他の値（width/length）のように `GameConfig` から取得するように直す（「パラメータは設定ファイル化」という全体方針に反しているため）。
+- [ ] **`index.html` の `<canvas>` に width/height を設定する**: 現状属性なしでデフォルトの 300×150px のまま。第二段階（Canvas描画）着手時に忘れず設定する。
+
+---
+
 ## 全体方針
 
 - **言語/描画**: TypeScript（ブラウザ）。まずは**描画なし（純ロジック、Node ヘッドレス実行）でシミュレーションを完成**させ、後から Canvas 2D で可視化する2段階アプローチ。
