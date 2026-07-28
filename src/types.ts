@@ -81,7 +81,7 @@ export interface GameState {
 }
 
 export interface GameConfig {
-  pitch: { width: number; height: number };
+  pitch: { width: number; height: number; goalWidth: number };
   player: { maxSpeed: number; radius: number };
   ball: { radius: number; friction: number; maxSpeed: number };
   ai: {

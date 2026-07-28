@@ -4,6 +4,7 @@ export const defaultConfig: GameConfig = {
   pitch: {
     width: 50,
     height: 75,
+    goalWidth: 3.66,
   },
   player: {
     maxSpeed: 7,

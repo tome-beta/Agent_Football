@@ -15,10 +15,10 @@
 
 2026-07-28 のプロジェクト全体調査で見つかった問題。マイルストーンAに着手する前に方針を決めておきたいもの。
 
-- [ ] **`npm run test` が現状必ず失敗する**: `tests/` ディレクトリが1つも存在しないのに `vitest.config.ts` の `include` は `tests/**/*.test.ts` を指定しており、`passWithNoTests` オプションも未設定。Vitest はテストファイル0件だとデフォルトでエラー終了する。→ 最初のテストファイルを追加するか `passWithNoTests: true` を設定する。
+- [x] **`npm run test` が現状必ず失敗する**: `tests/game/pitch.test.ts` を追加し解消。
 - [ ] **GK（ゴールキーパー）ロールの扱いを決める**: `specification/features_3_match_rules.md` は「GK1人＋フィールドプレイヤー2人」を前提にしているが、`TODO.md`（本ドキュメント）と `src/types.ts` の `Role` 型（`"FW" | "MF" | "DF"`）はGKを含まない。仕様書間で矛盾しているため、GKを導入するか、FW/MF/DFのみで進めるか先に決める。
 - [ ] **`docs/api.md` / `docs/development_guide.md` を実装に合わせて更新する**: 古いクラスベース設計（`class Ball`, `TeamType = "home"|"away"`, `Vector2D` など）のまま放置されており、現在の `src/types.ts`（関数型・`TeamSide = "A"|"B"`・`Vec2`）と一致しない。このまま参照すると誤った実装をしてしまう。
-- [ ] **`Pitch.goalWidth` のハードコードを解消する**: `src/game/pitch.ts` で `this.goalWidth = 3.66` と直書きされており、他の値（width/length）のように `GameConfig` から取得するように直す（「パラメータは設定ファイル化」という全体方針に反しているため）。
+- [x] **`Pitch.goalWidth` のハードコードを解消する**: `GameConfig.pitch.goalWidth` を追加し、`src/config/default.ts` / `src/game/pitch.ts` を更新して解消。
 - [ ] **`index.html` の `<canvas>` に width/height を設定する**: 現状属性なしでデフォルトの 300×150px のまま。第二段階（Canvas描画）着手時に忘れず設定する。
 
 ---
@@ -34,12 +34,12 @@
 
 ## 第一ステップ（3対3・地上2D）— MVP
 
-### マイルストーンA: 基盤とデータモデル
-- [ ] ピッチ定義（寸法・座標系＝原点中央推奨・ゴール位置・各ライン）を定数化する `pitch`
-- [ ] 選手データモデル（ID・チーム・役割・位置(x,y)・速度）を定義する `player`
-- [ ] ボール状態モデル（位置・速度・状態フラグ〔フリー/所持/アウト〕・最終キック者ID）を定義する `ball`
-- [ ] ゲーム状態オブジェクト（状態名・ターン・スコア・両チーム・ボール）を定義する `match`
-- [ ] パラメータ設定ファイル（YAML等）と読み込み処理 `config`
+### マイルストーンA: 基盤とデータモデル ✅ 完了
+- [x] ピッチ定義（寸法・座標系＝原点中央推奨・ゴール位置・各ライン）を定数化する `pitch` — `Pitch`（`isInBounds`/`isInGoalA`/`isInGoalB`）実装、`tests/game/pitch.test.ts` で検証
+- [x] 選手データモデル（ID・チーム・役割・位置(x,y)・速度）を定義する `player` — `Player`型 + `createPlayer`
+- [x] ボール状態モデル（位置・速度・状態フラグ〔フリー/所持/アウト〕・最終キック者ID）を定義する `ball` — `Ball`型 + `createBall`
+- [x] ゲーム状態オブジェクト（状態名・ターン・スコア・両チーム・ボール）を定義する `match` — `GameState`型 + `createInitialState`
+- [x] パラメータ設定ファイル（YAML等）と読み込み処理 `config` — `GameConfig`型 + `src/config/default.ts` + `loadConfig`
 
 ### マイルストーンB: ボール物理と当たり判定
 - [ ] ボール位置更新（毎ティック 位置 += 速度） `ball`
@@ -80,6 +80,8 @@
 - [ ] 選手描画（チーム色・番号・向き）／ボール描画 `renderer`
 - [ ] HUD（スコア・時間・ボール所有チーム）表示 `renderer`
 - [ ] デバッグオーバーレイ（目標位置・速度ベクトル・AI状態）※任意 `renderer`
+- [ ] `index.html` に試合開始ボタンを追加（シミュレーション開始/一時停止トリガー）
+- [ ] `index.html` に選手パラメータ設定UI（`PlayerParams` の speed / passAccuracy / shootPower / vision / aggressiveness をスライダー等で調整）を追加
 - [ ] リアルタイムで試合を閲覧できることを確認（**MVP v0.2**）
 
 ### マイルストーンG: テスト・調整
