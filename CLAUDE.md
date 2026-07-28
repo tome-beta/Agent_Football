@@ -4,7 +4,7 @@
 
 ## プロジェクト概要
 
-TypeScript で実装する **3対3サッカー試合シミュレーション**（"Soccer Simulation - 3vs3" / `soccer-sim`）。カルチョビット風のパラメータ駆動・自律選手AIが特徴。現状は**マイルストーンA（基盤とデータモデル）まで完了**した段階で、型定義・設定・ピッチ・初期状態生成・決定的乱数は実装済みですが、物理（`stepBall` / `kickBall`）、当たり判定、選手AI、試合進行、`Simulator` は未実装スタブ（`throw new Error("not implemented")`）です。次に着手するのは `TODO.md` のマイルストーンB（ボール物理と当たり判定）。
+TypeScript で実装する **3対3サッカー試合シミュレーション**（"Soccer Simulation - 3vs3" / `soccer-sim`）。カルチョビット風のパラメータ駆動・自律選手AIが特徴。現状は**マイルストーンB（ボール物理と当たり判定）まで完了**した段階です。型定義・設定・ピッチ・初期状態生成・決定的乱数・ボール物理（`stepBall` / `kickBall`）・当たり判定（`canKick` / `resolvePlayerBall` / `resolveBallPossession`）は実装済みですが、選手AI（`decideAction` / `stepPlayer`）、試合進行（`advancePhase` / `stepMatch`）、`Simulator` は未実装スタブ（`throw new Error("not implemented")`）です。次に着手するのは `TODO.md` のマイルストーンC（選手の自律行動AI）。
 
 開発は2段階で進めます：
 1. **第一段階（現在の主眼）**: 描画なし・Node ヘッドレスでのロジック実装 — 描画を一切介さずに1試合を正しくシミュレートできる状態を目指す。
@@ -40,7 +40,7 @@ types (src/types.ts)
 
 `src/game/*` は `src/renderer/*` を import したり DOM/Canvas API に触れたりしてはいけません — これにより同じ試合ロジックを Node ヘッドレスとブラウザの両方で実行可能にしています。Renderer 実装は `src/types.ts` の `Renderer` インターフェース経由で差し替え可能です（ブラウザ用 `CanvasRenderer`、ヘッドレス/テスト用 `NullRenderer`）。
 
-ゲームロジックはすべて**関数型**で書かれており、クラスベースではありません: `src/game/index.ts` はプレーンな関数群（`createBall`, `stepBall`, `kickBall`, `createPlayer`, `createTeam`, `formationPos`, `decideAction`, `stepPlayer`, `resolvePlayerBall`, `resolvePlayerPlayer`, `createInitialState`, `currentScore`, `advancePhase`, `stepMatch`, `finalizeResult`, `nextRandom`, `chance`）を再エクスポートしており、これらは `src/types.ts` のプレーンなデータオブジェクト（`GameState`, `Ball`, `Player` など）を操作します（メソッドを持つクラスではありません）。唯一の例外が `Pitch` で、これは `src/game/pitch.ts` にクラスとして実装されています。`step*` 系の関数は引数のオブジェクトを直接書き換え、戻り値を返しません。
+ゲームロジックはすべて**関数型**で書かれており、クラスベースではありません: `src/game/index.ts` はプレーンな関数群（`createBall`, `stepBall`, `kickBall`, `createPlayer`, `createTeam`, `formationPos`, `decideAction`, `stepPlayer`, `canKick`, `resolvePlayerBall`, `resolveBallPossession`, `resolvePlayerPlayer`, `createInitialState`, `currentScore`, `advancePhase`, `stepMatch`, `finalizeResult`, `nextRandom`, `chance`）を再エクスポートしており、これらは `src/types.ts` のプレーンなデータオブジェクト（`GameState`, `Ball`, `Player` など）を操作します（メソッドを持つクラスではありません）。唯一の例外が `Pitch` で、これは `src/game/pitch.ts` にクラスとして実装されています。`step*` 系の関数は引数のオブジェクトを直接書き換え、戻り値を返しません。
 
 `docs/api.md` と `docs/development_guide.md` は現在の実装に合わせて更新済みです（`docs/architecture.md` も正確）。ただし食い違いを見つけた場合は常に `src/types.ts` と実際の `src/` のソースを正とし、docs 側を直してください。
 
@@ -53,6 +53,7 @@ types (src/types.ts)
 - **時間は秒で扱う**。1ターン = `config.physics.dt` 秒（デフォルト 0.1）。位置更新は `pos += vel * dt`、摩擦は `vel *= friction^dt`（`config.ball.friction` は**毎秒の**速度保持率）。
 - **座標系**: 原点はピッチ中央、x = タッチライン方向、y = ゴールライン方向。**チームA は y = -length/2 のゴールを守り（攻撃方向 +y）、チームB はその逆**。`Pitch.isInGoalA()` は「チームAのゴールに入った」＝**チームBの得点**である点に注意。
 - **スコアは `scoreLog` が単一の情報源**。別カウンタを持たず `currentScore(state)` で集計する。
+- **ボールの保持者調停は `resolveBallPossession(players, ball, config)`**（毎ターン1回、選手の移動後）。`resolvePlayerBall` は選手1人分（トラップと追従）しか見ず、奪取と最近接ルールは扱わない。
 - **Node 側から `NullRenderer` を使うときは `src/renderer/nullRenderer` を直接 import** する（`src/renderer/index.ts` 経由だと DOM 依存の `CanvasRenderer` を巻き込む）。
 
 ## スキル

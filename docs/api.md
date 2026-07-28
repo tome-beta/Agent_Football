@@ -168,8 +168,19 @@ function chance(holder: RngHolder, p: number): boolean;               // 確率 
 | 関数 | シグネチャ | 状態 |
 |---|---|---|
 | `createBall` | `() => Ball` | 実装済み。中央・静止・`Free` |
-| `stepBall` | `(ball: Ball, config: GameConfig) => void` | **(未実装)** 位置更新→摩擦→速度上限→停止閾値 |
-| `kickBall` | `(ball: Ball, dir: Vec2, power: number, kickerId: string) => void` | **(未実装)** 速度設定・`lastKickerId` 更新・保持解除 |
+| `stepBall` | `(ball: Ball, config: GameConfig) => void` | 実装済み。位置更新→摩擦→速度上限→停止閾値 |
+| `kickBall` | `(ball: Ball, dir: Vec2, power: number, kickerId: string) => void` | 実装済み。速度設定・`lastKickerId` 更新・保持解除 |
+
+`stepBall` は features_2 §5.1 の順序で1ターン進めます。
+
+1. `pos += vel * dt`
+2. `vel *= friction^dt`（`friction` は毎秒の保持率なので `dt` 乗する）
+3. `|vel| <= ball.maxSpeed` にクランプ
+4. `|vel| < ball.stopThreshold` なら完全に停止
+
+`status` が `Possessed` / `OutOfBounds` のときは何もしません。保持中のボールは保持者に追従するため `resolvePlayerBall` が動かし、アウト中のボールは再開処理（マイルストーンD）を待ちます。
+
+`kickBall` は `dir` を正規化して扱うため、`dir` の大きさは速さに影響しません（速さは `power` [m/s]）。零ベクトルを渡すと速度0でボールを手放します。`config` を受け取らないので**速度上限はここでは掛からず**、次の `stepBall` が適用します。`lastKickerId` を更新するのはこの関数だけです（奪取では更新しない）。方向の誤差は乗せません（第一ステップは決定的。`passAccuracy` による揺らぎは選手AI側で `dir` に加える）。
 
 ---
 
@@ -189,8 +200,27 @@ function chance(holder: RngHolder, p: number): boolean;               // 確率 
 
 | 関数 | シグネチャ | 状態 |
 |---|---|---|
-| `resolvePlayerBall` | `(player, ball, config) => boolean` | **(未実装)** トラップ／奪取の成否を返す |
-| `resolvePlayerPlayer` | `(a, b, config) => void` | **(未実装)** 第一ステップでは実質 no-op（選手同士は通り抜ける） |
+| `canKick` | `(player, ball, config) => boolean` | 実装済み。`ai.ballControlDistance` 以内か |
+| `resolvePlayerBall` | `(player, ball, config) => boolean` | 実装済み。解決後にこの選手が保持しているかを返す |
+| `resolveBallPossession` | `(players: Player[], ball, config) => void` | 実装済み。全選手を見て保持者を決める |
+| `resolvePlayerPlayer` | `(a, b, config) => void` | 実装済み（**意図的に no-op**。第一ステップでは選手同士は通り抜ける） |
+
+### 責務の分け方
+
+`resolvePlayerBall` は**選手1人とボールの関係**だけを扱います。
+
+- 自分が保持中 → ボールを自分に追従させる（`pos` / `vel` をコピー。参照は共有しない）
+- フリーボール → `ai.trapDistance` 以内かつ `|vel| <= ai.trapMaxBallSpeed` なら保持する
+- 他選手が保持中 → **何もしない**
+
+**奪取をここで扱わないのは意図的です。** 味方から奪ってはいけないので保持者のチームを知る必要がありますが、`Ball` は `possessorId` しか持たないため単独では判定できません。同じ理由で「複数選手が範囲内なら最も近い選手が保持」（features_2 §4.1）も1人分の情報では表現できません。
+
+そこで全体の調停は `resolveBallPossession(players, ball, config)` が担当します。毎ターン1回、選手の移動後に呼びます。
+
+- 保持者がいる → 相手チームで `ai.tackleDistance` 以内の選手のうち**最も近い1人**が奪う。奪取時は `vel = 0` にし、**`lastKickerId` は変えない**（蹴っていないため）。奪う者がいなければ保持者に追従させる
+- フリーボール → トラップ条件を満たす選手のうち最も近い1人が保持する
+- `possessorId` が `players` に見つからない場合はフリーボールに戻して復帰させる
+- `OutOfBounds` のときは何もしない
 
 ---
 

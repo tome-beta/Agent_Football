@@ -51,14 +51,17 @@
 - [x] 役割別の初期フォーメーション配置 `player` — `createTeam` / `formationPos`、`tests/game/match.test.ts` で検証
 - [x] 決定的乱数（シード付き）`random` — `src/game/random.ts`、`tests/game/random.test.ts` で検証
 
-### マイルストーンB: ボール物理と当たり判定
-- [ ] ボール位置更新（毎ティック 位置 += 速度） `ball`
-- [ ] 摩擦・減速（毎ティック 速度 ×= 摩擦係数、最小速度で停止） `ball`
-- [ ] 最高速度制限（暴走防止の正規化） `ball`
-- [ ] キック初期化（選手AIの指定した方向・強度をボール速度に変換） `ball`
-- [ ] 選手-ボールのキック距離判定 `collision`
-- [ ] 選手-ボールのトラップ／ボール保持状態管理（所持中は選手に追従） `collision`
-- [ ] ボール奪取（タックル）判定＝距離ベース `collision`
+### マイルストーンB: ボール物理と当たり判定 ✅ 完了
+- [x] ボール位置更新（毎ティック 位置 += 速度） `ball` — `stepBall`（`pos += vel * dt`）、`tests/game/ball.test.ts` で検証
+- [x] 摩擦・減速（毎ティック 速度 ×= 摩擦係数、最小速度で停止） `ball` — `stepBall` で `vel *= friction^dt`（dt非依存）＋ `stopThreshold` 未満で完全停止
+- [x] 最高速度制限（暴走防止の正規化） `ball` — `stepBall` で `clampMagnitude(vel, ball.maxSpeed)`。`kickBall` は `config` を持たないため上限は次の `stepBall` が適用する
+- [x] キック初期化（選手AIの指定した方向・強度をボール速度に変換） `ball` — `kickBall`（方向は正規化、保持解除、`lastKickerId` 更新）
+- [x] 選手-ボールのキック距離判定 `collision` — `canKick`（`ai.ballControlDistance`）、`tests/game/collision.test.ts` で検証
+- [x] 選手-ボールのトラップ／ボール保持状態管理（所持中は選手に追従） `collision` — `resolvePlayerBall`（`ai.trapDistance` / `ai.trapMaxBallSpeed`、保持中は選手へ追従）
+- [x] ボール奪取（タックル）判定＝距離ベース `collision` — `resolveBallPossession`（相手チームのみ・最近接優先・速度リセット。`lastKickerId` は変えない）
+
+> 補足: `resolvePlayerBall` は単一選手しか見えず、`Ball` は `possessorId` しか持たないため、「味方から奪わない」「複数選手が範囲内なら最近接が保持」（features_2 §4.1/§4.3）を単独では判定できない。そのため全選手を受け取る `resolveBallPossession(players, ball, config)` を追加し、全体の調停をそちらに寄せた。既存シグネチャは変更していない。
+> `resolvePlayerPlayer` は features_2 §4.4 に従い**意図的に no-op**（第一ステップでは選手同士は通り抜ける）。
 
 ### マイルストーンC: 選手の自律行動AI
 - [ ] 選手パラメータ（**速度・パス精度・シュート力・視野・積極性**の5つを必須）を実装 `player`

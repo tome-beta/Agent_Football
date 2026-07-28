@@ -20,7 +20,8 @@
 - `ball.ts`: ボール物理演算（速度、加速度、移動）
 - `player.ts`: プレイヤーロジック（位置、速度、行動）
 - `match.ts`: マッチシミュレーション（全体制御、ターン管理）
-- `collision.ts`: 衝突判定（ボール ⟷ プレイヤー、ボール ⟷ ピッチ境界）
+- `collision.ts`: 当たり判定（キック距離・トラップ・保持中の追従・奪取）
+- `random.ts`: 決定的乱数（`Math.random()` は使わない）
 - `utils.ts`: ベクトル演算など共通ユーティリティ
 
 **特性**：
@@ -89,8 +90,9 @@ simulation (types + game + renderer 依存)
 │ 3. stepBall(ball, config)                            │
 │      位置更新 → 摩擦 → 速度上限 → 停止閾値          │
 │    ↓                                                 │
-│ 4. resolvePlayerBall(player, ball, config) … 全選手  │
-│      トラップ・奪取判定                              │
+│ 4. resolveBallPossession(players, ball, config)      │
+│      全選手を見て保持者を決める（トラップ・奪取・    │
+│      保持中の追従）                                  │
 │    ↓                                                 │
 │ 5. stepMatch(state, config)                          │
 │      ゴール／アウト判定、フェーズ遷移、ターン加算    │
