@@ -1,5 +1,6 @@
 import { loadConfig } from "./simulation";
-import { NullRenderer } from "./renderer";
+// CanvasRenderer を巻き込まないよう、renderer/index.ts ではなく実装ファイルを直接 import する。
+import { NullRenderer } from "./renderer/nullRenderer";
 import { Simulator, ConsoleLogger } from "./simulation";
 
 async function main() {

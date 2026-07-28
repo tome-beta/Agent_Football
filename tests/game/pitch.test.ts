@@ -7,7 +7,7 @@ describe("Pitch", () => {
 
   it("exposes dimensions from config", () => {
     expect(pitch.width).toBe(defaultConfig.pitch.width);
-    expect(pitch.length).toBe(defaultConfig.pitch.height);
+    expect(pitch.length).toBe(defaultConfig.pitch.length);
     expect(pitch.goalWidth).toBe(defaultConfig.pitch.goalWidth);
   });
 

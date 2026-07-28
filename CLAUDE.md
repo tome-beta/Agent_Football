@@ -4,7 +4,7 @@
 
 ## プロジェクト概要
 
-TypeScript で実装する **3対3サッカー試合シミュレーション**（"Soccer Simulation - 3vs3" / `soccer-sim`）。カルチョビット風のパラメータ駆動・自律選手AIが特徴。現状は**スケルトン段階**であり、`src/game/` と `src/simulation/` の大半の関数は未実装スタブ（`throw new Error("not implemented")`）です。また `vitest.config.ts` は `tests/**/*.test.ts` を期待していますが、`tests/` ディレクトリ自体まだ存在しません。
+TypeScript で実装する **3対3サッカー試合シミュレーション**（"Soccer Simulation - 3vs3" / `soccer-sim`）。カルチョビット風のパラメータ駆動・自律選手AIが特徴。現状は**マイルストーンA（基盤とデータモデル）まで完了**した段階で、型定義・設定・ピッチ・初期状態生成・決定的乱数は実装済みですが、物理（`stepBall` / `kickBall`）、当たり判定、選手AI、試合進行、`Simulator` は未実装スタブ（`throw new Error("not implemented")`）です。次に着手するのは `TODO.md` のマイルストーンB（ボール物理と当たり判定）。
 
 開発は2段階で進めます：
 1. **第一段階（現在の主眼）**: 描画なし・Node ヘッドレスでのロジック実装 — 描画を一切介さずに1試合を正しくシミュレートできる状態を目指す。
@@ -22,7 +22,9 @@ npm run test          # vitest run — 全テスト実行
 npm run test:watch   # vitest ウォッチモード
 ```
 
-単一テストファイルの実行: `npx vitest run tests/game/ball.test.ts`。まだテストファイルは1つも存在しませんが、`vitest.config.ts` の include glob と `docs/architecture.md` の記述から、`tests/<層>/<名前>.test.ts`（例: `tests/game/ball.test.ts`、`tests/simulation/simulator.test.ts`）という配置が本プロジェクトの規約です。
+単一テストファイルの実行: `npx vitest run tests/game/ball.test.ts`。テストの配置規約は `tests/<層>/<名前>.test.ts`（例: `tests/game/ball.test.ts`、`tests/simulation/simulator.test.ts`）で、`src/` の構成をミラーします。
+
+なお、この環境では `npx` が PATH に無いことがあります。その場合は `./node_modules/.bin/vitest run ...` / `./node_modules/.bin/tsc --noEmit` を直接叩くか、`/c/Program Files/nodejs` を PATH に追加してください。
 
 ## アーキテクチャ
 
@@ -38,13 +40,20 @@ types (src/types.ts)
 
 `src/game/*` は `src/renderer/*` を import したり DOM/Canvas API に触れたりしてはいけません — これにより同じ試合ロジックを Node ヘッドレスとブラウザの両方で実行可能にしています。Renderer 実装は `src/types.ts` の `Renderer` インターフェース経由で差し替え可能です（ブラウザ用 `CanvasRenderer`、ヘッドレス/テスト用 `NullRenderer`）。
 
-ゲームロジックはすべて**関数型**で書かれており、クラスベースではありません: `src/game/index.ts` はプレーンな関数群（`createBall`, `stepBall`, `kickBall`, `createPlayer`, `decideAction`, `stepPlayer`, `resolvePlayerBall`, `resolvePlayerPlayer`, `createInitialState`, `advancePhase`, `stepMatch`, `finalizeResult`）を再エクスポートしており、これらは `src/types.ts` のプレーンなデータオブジェクト（`GameState`, `Ball`, `Player` など）を操作します（メソッドを持つクラスではありません）。唯一の例外が `Pitch` で、これは `src/game/pitch.ts` にクラスとして実装されています。
+ゲームロジックはすべて**関数型**で書かれており、クラスベースではありません: `src/game/index.ts` はプレーンな関数群（`createBall`, `stepBall`, `kickBall`, `createPlayer`, `createTeam`, `formationPos`, `decideAction`, `stepPlayer`, `resolvePlayerBall`, `resolvePlayerPlayer`, `createInitialState`, `currentScore`, `advancePhase`, `stepMatch`, `finalizeResult`, `nextRandom`, `chance`）を再エクスポートしており、これらは `src/types.ts` のプレーンなデータオブジェクト（`GameState`, `Ball`, `Player` など）を操作します（メソッドを持つクラスではありません）。唯一の例外が `Pitch` で、これは `src/game/pitch.ts` にクラスとして実装されています。`step*` 系の関数は引数のオブジェクトを直接書き換え、戻り値を返しません。
 
-**`docs/api.md` と `docs/development_guide.md` は古い/理想形の内容**です — これらは以前のクラスベース設計（`class Ball`, `class Player`, `class Match`、`TeamType = "home"|"away"` などのフィールド名）を前提に書かれており、現在の `src/types.ts`（関数型スタイル、`TeamSide = "A"|"B"`、`Vector2D` ではなく `Vec2`、`GameConfig` 駆動のコンストラクション）とは一致しません。両者が食い違う場合は `src/types.ts` および実際の `src/` のソースコードを正としてください。`docs/architecture.md`（層構成・依存関係の説明）は現在も正確です。
+`docs/api.md` と `docs/development_guide.md` は現在の実装に合わせて更新済みです（`docs/architecture.md` も正確）。ただし食い違いを見つけた場合は常に `src/types.ts` と実際の `src/` のソースを正とし、docs 側を直してください。
 
-主要なドメイン型は `src/types.ts` にあります: `GameState`（phase/turn/half/teams/ball/scoreLog/result）、`Player`（id/team/role/params/pos/vel/state）、`PlayerParams`（speed/passAccuracy/shootPower/vision/aggressiveness — AI調整に必須の5パラメータ）、`Ball`（pos/vel/status/lastKickerId）、`GameConfig`（pitch/player/ball/ai/physics の設定。デフォルト値は `src/config/default.ts` を参照）。`MatchPhase` は試合の状態遷移を表します: `MATCH_START → KICKOFF → PLAYING → GOAL_SCORED → RESTART_SETUP → (HALF_TIME) → MATCH_END`。`PlayerActionState` は選手ごとの行動を表します: `Idle / BallTracking / Possession / Passing / Receiving / Shooting / Marking / MovingToSpace`。
+主要なドメイン型は `src/types.ts` にあります: `GameState`（phase/phaseTurn/turn/half/kickoffSide/teams/ball/scoreLog/rngSeed/result）、`Player`（id/team/role/params/homePos/pos/vel/state）、`PlayerParams`（speed/passAccuracy/shootPower/vision/aggressiveness — AI調整に必須の5パラメータ）、`Ball`（pos/vel/status/**possessorId**/lastKickerId — `possessorId` が現在の保持者、`lastKickerId` は最終キック者で別物）、`Team`（side/name/tactics/players）、`GameConfig`。`MatchPhase` は試合の状態遷移を表します: `MATCH_START → KICKOFF → PLAYING → GOAL_SCORED → RESTART_SETUP → (HALF_TIME) → MATCH_END`。`PlayerActionState` は選手ごとの行動を表します: `Idle / BallTracking / Possession / Passing / Receiving / Shooting / Marking / MovingToSpace`。役割は `FW/MF/DF` の3種のみで、**GKは第一ステップでは扱いません**（`specification/features_3_match_rules.md` にGK前提の記述がありますが、こちらが正）。
 
-設定値は `GameConfig` に一元化されており（ゲームプレイ定数のハードコード禁止）、調整可能な値（ピッチサイズ、最高速度、AIの距離/確率、物理演算の `dt` など）は `src/config/default.ts` を参照してください。
+### 実装時に必ず守る約束
+
+- **ゲームプレイ定数は必ず `GameConfig` 経由**（ハードコード禁止）。デフォルト値は `src/config/default.ts`。新しい調整値が必要になったら `GameConfig` にキーを追加する。
+- **`Math.random()` は使わない**。確率判定は `src/game/random.ts` の `nextRandom` / `chance` に `GameState` を渡す（乱数状態は `GameState.rngSeed`）。テストと試合の再現性のため。
+- **時間は秒で扱う**。1ターン = `config.physics.dt` 秒（デフォルト 0.1）。位置更新は `pos += vel * dt`、摩擦は `vel *= friction^dt`（`config.ball.friction` は**毎秒の**速度保持率）。
+- **座標系**: 原点はピッチ中央、x = タッチライン方向、y = ゴールライン方向。**チームA は y = -length/2 のゴールを守り（攻撃方向 +y）、チームB はその逆**。`Pitch.isInGoalA()` は「チームAのゴールに入った」＝**チームBの得点**である点に注意。
+- **スコアは `scoreLog` が単一の情報源**。別カウンタを持たず `currentScore(state)` で集計する。
+- **Node 側から `NullRenderer` を使うときは `src/renderer/nullRenderer` を直接 import** する（`src/renderer/index.ts` 経由だと DOM 依存の `CanvasRenderer` を巻き込む）。
 
 ## スキル
 
@@ -52,4 +61,4 @@ types (src/types.ts)
 
 ## 設計仕様書
 
-`specification/features_1_player_ai.md` 〜 `features_4_tech_roadmap.md` および `specification/開発メモ,.md` には、`TODO.md` の各マイルストーンの背景にある詳細な設計意図（選手AIの意思決定、ボール/ピッチ物理、試合ルール、技術ロードマップ）が書かれています。`TODO.md` のマイルストーンを実装する前にこれらを参照してください — コードや型定義には現れない「なぜそうするか」がここにあります。
+`specification/features_1_player_ai.md` 〜 `features_4_tech_roadmap.md` および `specification/開発メモ.md` には、`TODO.md` の各マイルストーンの背景にある詳細な設計意図（選手AIの意思決定、ボール/ピッチ物理、試合ルール、技術ロードマップ）が書かれています。`TODO.md` のマイルストーンを実装する前にこれらを参照してください — コードや型定義には現れない「なぜそうするか」がここにあります。

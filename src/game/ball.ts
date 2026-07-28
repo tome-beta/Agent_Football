@@ -5,6 +5,7 @@ export function createBall(): Ball {
     pos: { x: 0, y: 0 },
     vel: { x: 0, y: 0 },
     status: "Free",
+    possessorId: null,
     lastKickerId: null,
   };
 }

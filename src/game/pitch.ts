@@ -9,7 +9,7 @@ export class Pitch {
 
   constructor(config: GameConfig) {
     this.width = config.pitch.width;
-    this.length = config.pitch.height;
+    this.length = config.pitch.length;
     this.goalWidth = config.pitch.goalWidth;
   }
 

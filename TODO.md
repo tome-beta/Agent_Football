@@ -11,15 +11,23 @@
 
 ---
 
-## コードベース調査で見つかった課題（要対応）
+## コードベース調査で見つかった課題（すべて対応済み）
 
-2026-07-28 のプロジェクト全体調査で見つかった問題。マイルストーンAに着手する前に方針を決めておきたいもの。
+2026-07-28 のプロジェクト全体調査で見つかった問題。マイルストーンB着手前に解消した。
 
 - [x] **`npm run test` が現状必ず失敗する**: `tests/game/pitch.test.ts` を追加し解消。
-- [ ] **GK（ゴールキーパー）ロールの扱いを決める**: `specification/features_3_match_rules.md` は「GK1人＋フィールドプレイヤー2人」を前提にしているが、`TODO.md`（本ドキュメント）と `src/types.ts` の `Role` 型（`"FW" | "MF" | "DF"`）はGKを含まない。仕様書間で矛盾しているため、GKを導入するか、FW/MF/DFのみで進めるか先に決める。
-- [ ] **`docs/api.md` / `docs/development_guide.md` を実装に合わせて更新する**: 古いクラスベース設計（`class Ball`, `TeamType = "home"|"away"`, `Vector2D` など）のまま放置されており、現在の `src/types.ts`（関数型・`TeamSide = "A"|"B"`・`Vec2`）と一致しない。このまま参照すると誤った実装をしてしまう。
+- [x] **GK（ゴールキーパー）ロールの扱いを決める**: **FW/MF/DF のみで進める**と決定。`TODO.md` と `src/types.ts` の `Role` が一致しており、GK専用AIは本ドキュメントで明示的に第二ステップ送りにしているため。`specification/features_3_match_rules.md` の「GK1人＋FP2人」の記述が例外側。
+- [x] **`docs/api.md` / `docs/development_guide.md` を実装に合わせて更新する**: 両ドキュメントを現在の関数型設計（`TeamSide = "A"|"B"` / `Vec2` / `GameConfig` 駆動）に沿って全面的に書き直した。
 - [x] **`Pitch.goalWidth` のハードコードを解消する**: `GameConfig.pitch.goalWidth` を追加し、`src/config/default.ts` / `src/game/pitch.ts` を更新して解消。
-- [ ] **`index.html` の `<canvas>` に width/height を設定する**: 現状属性なしでデフォルトの 300×150px のまま。第二段階（Canvas描画）着手時に忘れず設定する。
+- [x] **`index.html` の `<canvas>` に width/height を設定する**: 400×600px（8px/m）を設定。
+- [x] **`Ball` に所持者IDが無い**: `possessorId` を追加。`lastKickerId`（最終キック者・再開権/得点者判定用）とは別物として型コメントで区別した。
+- [x] **`GameConfig` にB〜Dで必要な調整値が無い**: `ball.stopThreshold` / `ai.trapDistance` / `ai.trapMaxBallSpeed` / `ai.tackleDistance` / `team`（役割別パラメータ・フォーメーション・戦術・チーム名）/ `match`（ハーフのターン数・各フェーズの滞在ターン数）/ `random.seed` を追加。
+- [x] **`dt` と `friction` の単位が噛み合っていない**: 1ターン = 0.1秒（`physics.dt`）と定め、`friction` は「毎秒の速度保持率」と再定義（適用は `friction^dt` で dt 非依存）。`turnsPerHalf` は 900（=前半90秒）。
+- [x] **乱数シードの置き場が無い**: `src/game/random.ts`（決定的な mulberry32）を追加し、乱数状態は `GameState.rngSeed` として保持。`Math.random()` は使わない方針を確定。
+- [x] **`Team` / `MatchResult` が仕様に足りない**: `Team` に `name` と `tactics`（`aggressiveness` / `formationWidth`）、`MatchResult` に `durationTurns` を追加。スコアは `scoreLog` を単一の情報源とし `currentScore()` で集計する。
+- [x] **座標系の記述が仕様書間で矛盾**: 実装（原点中央・y軸方向にゴール）を正とし、`docs/api.md` と `docs/development_guide.md` に明記。`GameConfig.pitch.height` は意味に合わせて `length` へ改名。ゴール総幅は 7.32m に修正（従来値 3.66 は判定 `|x| <= goalWidth/2` と組み合わさって実質半分の幅になっていた）。
+- [x] **`createInitialState` が選手を配置しない**: `createTeam` / `formationPos` を追加し、両チーム FW/MF/DF 各1人を自陣の定位置に配置するようにした。`Player.homePos`（再開時に戻る基準位置）も追加。
+- [x] **headless が canvasRenderer を巻き込む**: `src/headless.ts` は `src/renderer/nullRenderer` を直接 import するように変更。
 
 ---
 
@@ -40,6 +48,8 @@
 - [x] ボール状態モデル（位置・速度・状態フラグ〔フリー/所持/アウト〕・最終キック者ID）を定義する `ball` — `Ball`型 + `createBall`
 - [x] ゲーム状態オブジェクト（状態名・ターン・スコア・両チーム・ボール）を定義する `match` — `GameState`型 + `createInitialState`
 - [x] パラメータ設定ファイル（YAML等）と読み込み処理 `config` — `GameConfig`型 + `src/config/default.ts` + `loadConfig`
+- [x] 役割別の初期フォーメーション配置 `player` — `createTeam` / `formationPos`、`tests/game/match.test.ts` で検証
+- [x] 決定的乱数（シード付き）`random` — `src/game/random.ts`、`tests/game/random.test.ts` で検証
 
 ### マイルストーンB: ボール物理と当たり判定
 - [ ] ボール位置更新（毎ティック 位置 += 速度） `ball`

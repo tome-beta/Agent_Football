@@ -1,479 +1,107 @@
 # 開発ガイド
 
-本プロジェクトをスタブ（未実装スタブ）から実装へ進める際のガイドです。
+スケルトンから実装を進める際の実務手順。API の一覧は [`api.md`](api.md)、層構成は [`architecture.md`](architecture.md) を参照。
 
-## 開発フロー
+---
 
-### 1. 型定義の確認・追加（`src/types.ts`）
+## 1. コマンド
 
-まず必要な型をすべて `src/types.ts` に定義します。
-
-```typescript
-// 例: Vector2D
-export interface Vector2D {
-  x: number;
-  y: number;
-}
-
-// 例: Player
-export interface Player {
-  id: string;
-  team: TeamType;
-  position: Vector2D;
-  velocity: Vector2D;
-  maxSpeed: number;
-}
+```bash
+npm install
+npm run headless    # src/headless.ts を Node（tsx）で実行 — 第一段階の検証用
+npm run typecheck   # tsc --noEmit
+npm run test        # vitest run
+npm run test:watch
+npm run dev         # Vite dev server（第二段階の Canvas 描画）
+npm run build       # tsc --noEmit && vite build
 ```
 
-**注意**: 型は後から必要に応じて追加できるので、最初からすべて完璧にする必要はありません。
+単一テストファイル: `npx vitest run tests/game/ball.test.ts`
 
-### 2. ゲームロジック実装（`src/game/*`）
+> `npx` が PATH に無い環境では `./node_modules/.bin/vitest run ...` を使うか、Node を PATH に追加する。
 
-**重要**: この層は描画に依存しないため、Canvas/DOM API は使いません。
+---
 
-#### 2.1 Pitch（ピッチ）の実装
+## 2. 開発の2段階
 
-```typescript
-// src/game/pitch.ts
-export class Pitch {
-  constructor(width: number, height: number) {
-    this.width = width;
-    this.height = height;
-  }
-  
-  isInBounds(position: Vector2D): boolean {
-    return (
-      position.x >= 0 && position.x <= this.width &&
-      position.y >= 0 && position.y <= this.height
-    );
-  }
-  
-  clamp(position: Vector2D): Vector2D {
-    return {
-      x: Math.max(0, Math.min(this.width, position.x)),
-      y: Math.max(0, Math.min(this.height, position.y)),
-    };
-  }
-}
-```
+1. **第一段階（現在）**: 描画なし・Node ヘッドレスでロジックを完成させる。`npm run headless` で1試合を最後まで走らせられる状態がゴール（MVP v0.1）。
+2. **第二段階**: 完成したロジックの上に Canvas 2D 描画を載せる。
 
-#### 2.2 Ball（ボール）の実装
+`src/game/*` は `src/renderer/*` を import せず、DOM/Canvas API にも触れない。この制約があるからこそ同じロジックを Node とブラウザの両方で動かせる。
 
-```typescript
-// src/game/ball.ts
-export class Ball {
-  private position: Vector2D;
-  private velocity: Vector2D;
-  private readonly radius: number = 0.2; // meter
-  private readonly friction: number = 0.98;
-  
-  constructor(initialPosition: Vector2D, initialVelocity?: Vector2D) {
-    this.position = initialPosition;
-    this.velocity = initialVelocity ?? { x: 0, y: 0 };
-  }
-  
-  update(dt: number, pitch: Pitch): void {
-    // ボール移動
-    this.position = {
-      x: this.position.x + this.velocity.x * dt,
-      y: this.position.y + this.velocity.y * dt,
-    };
-    
-    // 摩擦力を適用
-    this.velocity = multiply(this.velocity, this.friction);
-    
-    // ピッチ境界で反射
-    if (!pitch.isInBounds(this.position)) {
-      this.position = pitch.clamp(this.position);
-      this.velocity = multiply(this.velocity, -1); // 反射
-    }
-  }
-  
-  getPosition(): Vector2D {
-    return this.position;
-  }
-  
-  getVelocity(): Vector2D {
-    return this.velocity;
-  }
-}
-```
+---
 
-#### 2.3 Player（プレイヤー）の実装
+## 3. 実装の進め方
+
+`TODO.md` のマイルストーン順（A → B → C → D → E）に進める。着手前に対応する `specification/features_*.md` を読むこと。コードや型に現れない「なぜそうするか」がそこにある。
+
+各関数は `throw new Error("not implemented")` のスタブとして既に置かれている。**シグネチャを勝手に変えず、まず中身を埋める**。変更が必要なら `docs/api.md` も同時に更新する。
+
+### 実装時の約束ごと
+
+- **ゲームプレイ定数は必ず `GameConfig` 経由**。マジックナンバーをロジックに書かない。新しい調整値が必要になったら `src/types.ts` の `GameConfig` にキーを足し、`src/config/default.ts` にデフォルト値を書く。
+- **`Math.random()` を使わない**。確率判定は `src/game/random.ts` の `nextRandom` / `chance` に `GameState` を渡す。これでテストと試合の再現性が保たれる。
+- **`step*` 系は引数を直接書き換える**（戻り値なし）。新しいオブジェクトを返す方式と混ぜない。
+- **時間は秒で扱う**。1ターン = `config.physics.dt` 秒。位置更新は `pos += vel * dt`、摩擦は `vel *= friction^dt`（`friction` は毎秒の保持率）。ティック数を直接掛けるコードを書かない。
+- **スコアは `scoreLog` が単一の情報源**。チームごとのカウンタを別に持たず、`currentScore(state)` で集計する。
+
+---
+
+## 4. 座標系（間違えやすいので必読）
+
+- 原点はピッチ中央。x = タッチライン方向（±`width/2`）、y = ゴールライン方向（±`length/2`）。
+- **チームA は y = -length/2 のゴールを守り、チームB は y = +length/2 のゴールを守る。**
+  つまりチームA の攻撃方向は +y、チームB は -y。
+- `Pitch.isInGoalA()` は「**チームA のゴールにボールが入った**」＝ **チームB の得点**。名前は持ち主を指すので、得点者の判定では逆になる。
+- `specification/features_3_match_rules.md` は「x軸方向にゴール・座標 0〜100」と書いているが**これは実装と異なる**。`src/game/pitch.ts` が正。
+
+---
+
+## 5. テスト
+
+`vitest.config.ts` の include は `tests/**/*.test.ts`。配置規約は `tests/<層>/<名前>.test.ts`（例: `tests/game/ball.test.ts`, `tests/simulation/simulator.test.ts`）でソースの構成をミラーする。
 
 ```typescript
-// src/game/player.ts
-export class Player {
-  private position: Vector2D;
-  private velocity: Vector2D;
-  private readonly maxSpeed: number = 15; // m/s
-  private currentDirection: Vector2D = { x: 0, y: 0 };
-  
-  constructor(
-    public readonly id: string,
-    public readonly team: TeamType,
-    initialPosition: Vector2D
-  ) {
-    this.position = initialPosition;
-    this.velocity = { x: 0, y: 0 };
-  }
-  
-  move(direction: Vector2D): void {
-    // 方向を正規化して速度を設定
-    const normalized = normalize(direction);
-    this.velocity = multiply(normalized, this.maxSpeed);
-  }
-  
-  update(dt: number, pitch: Pitch): void {
-    // プレイヤー移動
-    this.position = {
-      x: this.position.x + this.velocity.x * dt,
-      y: this.position.y + this.velocity.y * dt,
-    };
-    
-    // ピッチ内に制限
-    this.position = pitch.clamp(this.position);
-  }
-  
-  getPosition(): Vector2D {
-    return this.position;
-  }
-}
-```
+import { describe, it, expect } from "vitest";
+import { createInitialState } from "../../src/game/match";
+import { defaultConfig } from "../../src/config/default";
 
-#### 2.4 Collision（衝突判定）の実装
-
-```typescript
-// src/game/collision.ts
-export function checkBallPlayerCollision(
-  ball: Ball,
-  player: Player
-): boolean {
-  const ballPos = ball.getPosition();
-  const playerPos = player.getPosition();
-  const dist = distance(ballPos, playerPos);
-  const collisionRadius = ball.radius + 0.3; // player radius
-  return dist < collisionRadius;
-}
-
-export function resolveBallPlayerCollision(
-  ball: Ball,
-  player: Player
-): void {
-  // ボール速度をプレイヤー方向に変更
-  const ballPos = ball.getPosition();
-  const playerPos = player.getPosition();
-  const direction = normalize(subtract(ballPos, playerPos));
-  const kickPower = 20; // m/s
-  ball.setVelocity(multiply(direction, kickPower));
-}
-```
-
-#### 2.5 Match（マッチ）の実装
-
-```typescript
-// src/game/match.ts
-export class Match {
-  private homeTeam: Team;
-  private awayTeam: Team;
-  private ball: Ball;
-  private pitch: Pitch;
-  private time: number = 0;
-  
-  constructor(homeTeam: Team, awayTeam: Team, pitch: Pitch) {
-    this.homeTeam = homeTeam;
-    this.awayTeam = awayTeam;
-    this.pitch = pitch;
-    this.ball = new Ball({ x: pitch.width / 2, y: pitch.height / 2 });
-  }
-  
-  update(dt: number, playerInputs: PlayerInput[]): void {
-    // ボール更新
-    this.ball.update(dt, this.pitch);
-    
-    // プレイヤー更新
-    [...this.homeTeam.players, ...this.awayTeam.players].forEach(
-      (player) => {
-        player.update(dt, this.pitch);
-      }
-    );
-    
-    // 衝突判定
-    this.homeTeam.players.forEach((player) => {
-      if (checkBallPlayerCollision(this.ball, player)) {
-        resolveBallPlayerCollision(this.ball, player);
-      }
-    });
-    
-    // 時間更新
-    this.time += dt;
-    
-    // ゴール判定（ここで簡略化）
-    this.checkGoal();
-  }
-  
-  private checkGoal(): void {
-    const ballPos = this.ball.getPosition();
-    const pitch = this.pitch;
-    
-    // 右ゴール（away チームが得点）
-    if (ballPos.x >= pitch.width) {
-      this.awayTeam.score += 1;
-      this.resetBall();
-    }
-    // 左ゴール（home チームが得点）
-    if (ballPos.x <= 0) {
-      this.homeTeam.score += 1;
-      this.resetBall();
-    }
-  }
-  
-  private resetBall(): void {
-    this.ball = new Ball({
-      x: this.pitch.width / 2,
-      y: this.pitch.height / 2,
-    });
-  }
-  
-  getState(): MatchState {
-    return {
-      homeTeam: this.homeTeam,
-      awayTeam: this.awayTeam,
-      ball: this.ball,
-      pitch: this.pitch,
-      time: this.time,
-    };
-  }
-}
-```
-
-### 3. テスト追加（`tests/*`）
-
-各モジュールの実装と並行して、テストを追加します。
-
-```typescript
-// tests/game/ball.test.ts
-import { describe, it, expect } from 'vitest';
-import { Ball } from '../../src/game/ball.js';
-import { Pitch } from '../../src/game/pitch.js';
-
-describe('Ball', () => {
-  it('should move forward when velocity is set', () => {
-    const ball = new Ball({ x: 0, y: 0 }, { x: 10, y: 0 });
-    const pitch = new Pitch(100, 100);
-    
-    ball.update(0.1, pitch);
-    
-    const pos = ball.getPosition();
-    expect(pos.x).toBeGreaterThan(0);
-    expect(pos.y).toEqual(0);
-  });
-  
-  it('should not go out of bounds', () => {
-    const ball = new Ball({ x: 99, y: 50 }, { x: 100, y: 0 });
-    const pitch = new Pitch(100, 100);
-    
-    ball.update(1, pitch);
-    
-    const pos = ball.getPosition();
-    expect(pos.x).toBeLessThanOrEqual(100);
+describe("createInitialState", () => {
+  it("creates 3 players per team", () => {
+    const state = createInitialState(defaultConfig);
+    expect(state.teams.A.players).toHaveLength(3);
   });
 });
 ```
 
-**テスト実行**:
+テストの指針:
 
-```bash
-npm run test           # すべてのテストを実行
-npm run test:watch    # ウォッチモード
-```
+- **物理は境界値を突く**。停止閾値ちょうど、最高速度超過、ゴールライン上、ゴール幅の端。
+- **確率的なロジックは固定シードで検証する**。`loadConfig({ random: { seed: 123 } })` で系列を固定すれば、パス成否のような乱数依存の挙動も決定的にテストできる。
+- **AI は「試合が壊れないこと」を確認する**。最適な判断かどうかより、無限ループ・NaN・ピッチ外への逸脱が起きないこと。
 
-### 4. 描画層実装（`src/renderer/*` — 第二段階）
+---
 
-ロジックが完成した後、描画層を実装します。
+## 6. ヘッドレス実行
 
-```typescript
-// src/renderer/canvasRenderer.ts
-export class CanvasRenderer implements Renderer {
-  private ctx: CanvasRenderingContext2D;
-  
-  constructor(private canvas: HTMLCanvasElement) {
-    this.ctx = canvas.getContext('2d')!;
-  }
-  
-  render(matchState: MatchState): void {
-    this.clear();
-    
-    // ピッチを描画
-    this.drawPitch(matchState.pitch);
-    
-    // ボールを描画
-    this.drawBall(matchState.ball);
-    
-    // プレイヤーを描画
-    this.drawPlayers(matchState.homeTeam);
-    this.drawPlayers(matchState.awayTeam);
-    
-    // スコアを描画
-    this.drawScore(matchState.homeTeam, matchState.awayTeam);
-  }
-  
-  private clear(): void {
-    this.ctx.fillStyle = '#2d5016';
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-  }
-  
-  private drawBall(ball: Ball): void {
-    const pos = ball.getPosition();
-    // 物理座標 → 画面座標に変換
-    const screenX = this.toScreenX(pos.x);
-    const screenY = this.toScreenY(pos.y);
-    
-    this.ctx.fillStyle = 'white';
-    this.ctx.beginPath();
-    this.ctx.arc(screenX, screenY, 5, 0, Math.PI * 2);
-    this.ctx.fill();
-  }
-  
-  private toScreenX(worldX: number): number {
-    // 簡略化: 1:1 スケール
-    return worldX;
-  }
-  
-  private toScreenY(worldY: number): number {
-    return worldY;
-  }
-  
-  // ... 他のメソッド
-}
-```
-
-### 5. エントリポイント実装
-
-#### 5.1 Headless（第一段階）
-
-```typescript
-// src/headless.ts
-import { Simulator } from './simulation/index.js';
-import { NullRenderer } from './renderer/nullRenderer.js';
-import { Match } from './game/match.js';
-import { Pitch } from './game/pitch.js';
-import { Player } from './game/player.js';
-
-const pitch = new Pitch(105, 68);
-
-const homeTeam = {
-  name: 'Home',
-  score: 0,
-  players: [
-    new Player('h1', 'home', { x: 20, y: 34 }),
-    new Player('h2', 'home', { x: 50, y: 20 }),
-    new Player('h3', 'home', { x: 50, y: 48 }),
-  ],
-};
-
-const awayTeam = {
-  name: 'Away',
-  score: 0,
-  players: [
-    new Player('a1', 'away', { x: 85, y: 34 }),
-    new Player('a2', 'away', { x: 55, y: 20 }),
-    new Player('a3', 'away', { x: 55, y: 48 }),
-  ],
-};
-
-const match = new Match(homeTeam, awayTeam, pitch);
-const renderer = new NullRenderer();
-const simulator = new Simulator(match, renderer);
-
-simulator.start();
-```
-
-**実行**:
+`src/headless.ts` がエントリ。`NullRenderer` は `src/renderer/nullRenderer` から**直接** import する（`src/renderer/index.ts` 経由だと DOM 依存の `CanvasRenderer` を Node に持ち込んでしまう）。
 
 ```bash
 npm run headless
 ```
 
-#### 5.2 Main（第二段階）
-
-```typescript
-// src/main.ts
-import { Simulator } from './simulation/index.js';
-import { CanvasRenderer } from './renderer/canvasRenderer.js';
-import { Match } from './game/match.js';
-import { Pitch } from './game/pitch.js';
-import { Player } from './game/player.js';
-
-const canvas = document.getElementById('game') as HTMLCanvasElement;
-canvas.width = 1050;  // ピッチ幅 × 10
-canvas.height = 680;  // ピッチ高さ × 10
-
-// ... same setup as headless ...
-
-const renderer = new CanvasRenderer(canvas);
-const simulator = new Simulator(match, renderer);
-
-simulator.start();
-```
-
-**実行**:
-
-```bash
-npm run dev
-```
-
-## チェックリスト
-
-開発を進める際の確認事項：
-
-- [ ] 型定義が完成している
-- [ ] ゲームロジック（game 層）が実装されている
-- [ ] game 層のテストが 70% 以上カバーしている
-- [ ] `npm run typecheck` で型エラーがない
-- [ ] `npm run test` で全テストが通っている
-- [ ] `npm run headless` でロジックが正常に動作する
-- [ ] 描画層実装は game 層に依存していない
-- [ ] `npm run dev` でブラウザでの描画が確認できる
-- [ ] README.md が最新状態に保たれている
-
-## トラブルシューティング
-
-### 型エラーが出ている
-
-```bash
-npm run typecheck
-```
-
-で詳細を確認。`src/types.ts` に必要な型定義があるか確認してください。
-
-### テストが失敗する
-
-```bash
-npm run test:watch
-```
-
-で失敗箇所を詳しく確認。ロジック実装の見直しが必要かもしれません。
-
-### ブラウザで描画されない
-
-1. DevTools の Console でエラーを確認
-2. `src/main.ts` でエントリが正しいか確認
-3. Canvas 要素が `index.html` にあるか確認
-
-## 参考資料
-
-- [アーキテクチャ](./architecture.md)
-- [API リファレンス](./api.md)
-- README.md の「ディレクトリ構成」セクション
+`Simulator.run()` が未実装のうちは "not implemented" で落ちる。マイルストーンE の完了条件は、このコマンドが1試合を走り切って `ConsoleLogger` が結果を出力すること。
 
 ---
 
-**始め方**:
-1. `npm install`
-2. `src/types.ts` 型定義を完成させる
-3. `src/game/*` をスタブから実装へ
-4. `tests/game/*` でテスト追加
-5. `npm run headless` で確認
-6. `src/renderer/*` を実装（第二段階）
-7. `npm run dev` でブラウザ確認
+## 7. 第二段階（Canvas 描画）に入るとき
+
+- `CanvasRenderer` を `Renderer` インターフェースに沿って実装する。ロジック側は一切変更しない。
+- ワールド座標（原点中央・メートル）→ スクリーン座標（左上原点・ピクセル）の変換を1箇所にまとめる。`index.html` の canvas は 400×600 px、ピッチは 50×75 m なので 8 px/m。
+- `index.html` に試合開始ボタンと `PlayerParams` 調整UIを追加する（`TODO.md` マイルストーンF）。
+
+---
+
+## 8. スキル
+
+繰り返す手順（ヘッドレス結果の確認、物理パラメータの調整・検証フローなど）に気づいたら `.claude/skills/<名前>/SKILL.md` に切り出す。書き方は `.claude/skills/README.md` を参照。

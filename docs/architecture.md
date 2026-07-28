@@ -30,9 +30,12 @@
 
 ### 3. Renderer 層 (`src/renderer/`)
 **描画層**
-- `renderer.ts`: 基底インターフェース（描画の抽象化）
-- `canvasRenderer.ts`: Canvas 2D による具体的な実装
+- `canvasRenderer.ts`: Canvas 2D による具体的な実装（未実装。第二段階で着手）
 - `nullRenderer.ts`: ダミー実装（テスト・ヘッドレス時用）
+
+抽象インターフェース `Renderer` は Types 層（`src/types.ts`）に置いています。Renderer 層が「差し替え可能な実装の集まり」であるのに対し、その契約は game / simulation 層からも参照されるためです。
+
+**Node から `NullRenderer` を使うときは `src/renderer/nullRenderer` を直接 import すること。** `src/renderer/index.ts` 経由だと DOM 依存の `CanvasRenderer` を巻き込みます。
 
 **特性**：
 - Game 層のモデル（型）を受け取り、画面に描画
@@ -69,28 +72,36 @@ simulation (types + game + renderer 依存)
 
 **重要**: game層は types以外に依存しないため、描画を考慮しない。
 
-## データフロー（一イテレーション）
+## データフロー（1ターン）
+
+1ターン = `config.physics.dt` 秒。`Simulator.step()` が以下を1回まわします。
 
 ```
-┌─────────────────────────────────────────┐
-│ Simulation Loop (Game Loop)             │
-├─────────────────────────────────────────┤
-│ 1. Input: プレイヤー操作 / AI判定      │
-│    ↓                                    │
-│ 2. Game.update(dt)                      │
-│    - ボール・プレイヤー移動             │
-│    - 衝突判定                           │
-│    - ゲーム状態更新                     │
-│    ↓                                    │
-│ 3. Renderer.render(gameState)           │
-│    - 画面座標に変換                     │
-│    - Canvas に描画                      │
-│    ↓                                    │
-│ 4. requestAnimationFrame / setInterval  │
-│    ↓ (next frame)                      │
-│ 1. Input: ...                          │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│ Simulator.step()                                     │
+├──────────────────────────────────────────────────────┤
+│ 1. decideAction(player, state, config)  … 全選手     │
+│      行動ステートマシンで意思決定・キック指示        │
+│    ↓                                                 │
+│ 2. stepPlayer(player, config)           … 全選手     │
+│      pos += vel * dt                                 │
+│    ↓                                                 │
+│ 3. stepBall(ball, config)                            │
+│      位置更新 → 摩擦 → 速度上限 → 停止閾値          │
+│    ↓                                                 │
+│ 4. resolvePlayerBall(player, ball, config) … 全選手  │
+│      トラップ・奪取判定                              │
+│    ↓                                                 │
+│ 5. stepMatch(state, config)                          │
+│      ゴール／アウト判定、フェーズ遷移、ターン加算    │
+│    ↓                                                 │
+│ 6. Renderer（drawPitch / drawPlayers / drawBall /    │
+│    drawHud）と Logger へ出力                         │
+│    ↓ 次のターンへ                                    │
+└──────────────────────────────────────────────────────┘
 ```
+
+ブラウザでは `requestAnimationFrame` が、ヘッドレスでは `Simulator.run()` のループがこの `step()` を駆動します。ゲームロジック側はどちらで動かされているかを知りません。
 
 ## 拡張性
 
