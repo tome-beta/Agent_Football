@@ -32,6 +32,11 @@ export const defaultConfig: GameConfig = {
     passDistance: 15,
     shootDistance: 20,
     shootProbability: 0.3,
+    // features_1 §8.1 の視野距離レンジ(10〜25m)の中間よりやや広め。
+    visionDistance: 22,
+    passSpeed: 10,
+    shootSpeed: 22,
+    aimErrorMaxDeg: 12,
   },
   team: {
     // features_1 §8.2 のサンプル選手データに準拠。

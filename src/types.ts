@@ -131,6 +131,14 @@ export interface GameConfig {
     passDistance: number;
     shootDistance: number;
     shootProbability: number;
+    /** 選手がボール・味方・敵を認識できる距離 [m]（視野角は PlayerParams.vision）。 */
+    visionDistance: number;
+    /** パスの基準初速 [m/s]。実際の速度は距離に応じて多少増える。 */
+    passSpeed: number;
+    /** シュートの基準初速上限 [m/s]。実際は shootPower を掛けて減衰させる。 */
+    shootSpeed: number;
+    /** passAccuracy/shootPower が 0 のときの最大キック角度誤差 [度]。1 のとき誤差0。 */
+    aimErrorMaxDeg: number;
   };
   team: {
     /** 役割ごとのデフォルト選手パラメータ。 */

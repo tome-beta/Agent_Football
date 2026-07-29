@@ -63,24 +63,24 @@
 > 補足: `resolvePlayerBall` は単一選手しか見えず、`Ball` は `possessorId` しか持たないため、「味方から奪わない」「複数選手が範囲内なら最近接が保持」（features_2 §4.1/§4.3）を単独では判定できない。そのため全選手を受け取る `resolveBallPossession(players, ball, config)` を追加し、全体の調停をそちらに寄せた。既存シグネチャは変更していない。
 > `resolvePlayerPlayer` は features_2 §4.4 に従い**意図的に no-op**（第一ステップでは選手同士は通り抜ける）。
 
-### マイルストーンC: 選手の自律行動AI
-- [ ] 選手パラメータ（**速度・パス精度・シュート力・視野・積極性**の5つを必須）を実装 `player`
-- [ ] 役割定義（FW/MF/DF）と初期ポジション配置 `player`
-- [ ] 行動ステートマシン（Idle / BallTracking / Possession / Passing / Receiving / Shooting / Marking / MovingToSpace）を実装 `player`
-- [ ] ボール保持者の意思決定: パス受け手選定・パス成功率評価・シュート可否/成功率評価 `player`
-- [ ] ボール非保持者の意思決定: マーク・スペースへの移動・守備ポジション取り `player`
-- [ ] 攻守の切り替え（ボール保持権判定に連動したモード遷移） `player`
-- [ ] 意思決定の確率性（パス/シュート/奪取の成否を乱数＋パラメータで判定） `player`
+### マイルストーンC: 選手の自律行動AI ✅ 完了
+- [x] 選手パラメータ（**速度・パス精度・シュート力・視野・積極性**の5つを必須）を実装 `player` — `PlayerParams`（マイルストーンAで型定義済み）を `decideAction` の意思決定で実際に使用
+- [x] 役割定義（FW/MF/DF）と初期ポジション配置 `player` — マイルストーンAで実装済みの `createTeam`/`formationPos` を活用
+- [x] 行動ステートマシン（Idle / BallTracking / Possession / Passing / Receiving / Shooting / Marking / MovingToSpace）を実装 `player` — `decideAction` がボール保持状況で4分岐し `player.state` を更新、`tests/game/player.test.ts` で検証
+- [x] ボール保持者の意思決定: パス受け手選定・パス成功率評価・シュート可否/成功率評価 `player` — `decidePossessionAction`（`ai.shootDistance` 内で `shootProbability × shootPower × aggressiveness` の確率でシュート、それ以外は視野・パス射程内でマークが薄くゴールに近い味方を選んでパス、候補がなければドリブル）
+- [x] ボール非保持者の意思決定: マーク・スペースへの移動・守備ポジション取り `player` — `decideDefensiveAction`（最近接の敵をゴール側からマーク）/ `decideSupportAction`（フォーメーション位置＋ボール寄り）/ `decideFreeBallAction`（最近接の味方だけがボールを追い、他はフォーメーション位置）
+- [x] 攻守の切り替え（ボール保持権判定に連動したモード遷移） `player` — `decideAction` が `ball.possessorId` を毎ターン再評価して4分岐を切り替える
+- [x] 意思決定の確率性（パス/シュート/奪取の成否を乱数＋パラメータで判定） `player` — シュート可否は `chance()`、パス/シュートの方向誤差は `nextRandomRange()` で `passAccuracy`/`shootPower` に応じてブレる（`ai.aimErrorMaxDeg`）
 
-### マイルストーンD: 試合ルールと進行
-- [ ] 試合状態ステートマシン（MATCH_START → KICKOFF → PLAYING → GOAL_SCORED → RESTART_SETUP → (HALF_TIME) → MATCH_END） `match`
-- [ ] ターン制タイマー（前後半・ターンカウンタ・状態ごとのタイムアウト） `match`
-- [ ] ゴール判定（ボールがゴール枠内でゴールラインを越えたか） `match`
-- [ ] スコア管理・得点履歴（得点者・ターン） `match`
-- [ ] キックオフ／得点後の再開シーケンス（中央リセット・キックオフ権） `match`
-- [ ] アウトオブバウンズ判定と**簡易再開**（第一ステップは中央付近へ戻し＋相手ボール。スローイン/コーナー/ゴールキックの厳密化は後回し） `match`+`ball`
-- [ ] チーム戦術パラメータ（aggressiveness 等2〜3個）の保持と参照 `match`
-- [ ] 試合終了・勝敗判定（スコア比較、同点はDraw） `match`
+### マイルストーンD: 試合ルールと進行 ✅ 完了
+- [x] 試合状態ステートマシン（MATCH_START → KICKOFF → PLAYING → GOAL_SCORED → RESTART_SETUP → (HALF_TIME) → MATCH_END） `match` — `advancePhase` が全遷移を実装、`tests/game/match.test.ts` で検証
+- [x] ターン制タイマー（前後半・ターンカウンタ・状態ごとのタイムアウト） `match` — `stepMatch` が `turn`/`phaseTurn` を毎ターン加算、`advancePhase` が `config.match.kickoffTurns`/`goalScoredTurns`/`restartSetupTurns`/`turnsPerHalf` と比較
+- [x] ゴール判定（ボールがゴール枠内でゴールラインを越えたか） `match` — `stepMatch` 内 `checkGoal` が `Pitch.isInGoalA`/`isInGoalB` で判定
+- [x] スコア管理・得点履歴（得点者・ターン） `match` — `checkGoal` が `scoreLog` に `{team, playerId: lastKickerId, turn}` を追記（マイルストーンAの `currentScore`/`finalizeResult` は既存のものを流用）
+- [x] キックオフ／得点後の再開シーケンス（中央リセット・キックオフ権） `match` — `setupKickoff`（全選手を定位置へ・ボール中央・`kickoffSide` の選手が保持）。ゴール時は失点側に `kickoffSide` を設定
+- [x] アウトオブバウンズ判定と**簡易再開**（第一ステップは中央付近へ戻し＋相手ボール） `match`+`ball` — `stepMatch` 内 `handleOutOfBounds` が `Pitch.isInBounds` で判定し、最後のキッカーの相手チームで中央に最も近い選手に持たせる
+- [x] チーム戦術パラメータ（aggressiveness 等2〜3個）の保持と参照 `match` — `TeamTactics`/`createTeam` はマイルストーンAで実装済み。マイルストーンDでは新規実装なし
+- [x] 試合終了・勝敗判定（スコア比較、同点はDraw） `match` — `advancePhase` が後半終了ターンで `MATCH_END` に遷移し `finalizeResult`（マイルストーンAで実装済み）を呼ぶ
 
 ### マイルストーンE: シミュレーション統合（初MVP）
 - [ ] メインゲームループ（AI判定→選手移動→ボール更新→当たり判定→状態更新→次ターン） `simulator`

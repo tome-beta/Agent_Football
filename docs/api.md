@@ -106,7 +106,7 @@ interface MatchResult { scoreA: number; scoreB: number; winner: TeamSide | "Draw
 | `pitch` | `width` / `length` / `goalWidth` | ピッチ幅・長さ・ゴール総幅 [m]（判定は `abs(x) <= goalWidth/2`） |
 | `player` | `maxSpeed` / `radius` | 選手の速度上限・半径 |
 | `ball` | `radius` / `friction` / `stopThreshold` / `maxSpeed` | `friction` は**毎秒の速度保持率**。適用は `friction^dt` |
-| `ai` | `ballControlDistance` / `trapDistance` / `trapMaxBallSpeed` / `tackleDistance` / `passDistance` / `shootDistance` / `shootProbability` | 各種判定距離・確率 |
+| `ai` | `ballControlDistance` / `trapDistance` / `trapMaxBallSpeed` / `tackleDistance` / `passDistance` / `shootDistance` / `shootProbability` / `visionDistance` / `passSpeed` / `shootSpeed` / `aimErrorMaxDeg` | 各種判定距離・確率。`visionDistance` は選手が味方/敵/ボールを認識できる距離（視野角は `PlayerParams.vision`）、`passSpeed`/`shootSpeed` はキックの基準初速、`aimErrorMaxDeg` は `passAccuracy`/`shootPower` が0のときの最大キック角度誤差 |
 | `team` | `roleParams` / `formation` / `tactics` / `names` | 役割別パラメータ・定位置・戦術・チーム名 |
 | `match` | `turnsPerHalf` / `goalScoredTurns` / `restartSetupTurns` / `kickoffTurns` | ハーフのターン数と各フェーズの滞在ターン数 |
 | `physics` | `dt` | 1ターンの秒数 |
@@ -191,8 +191,8 @@ function chance(holder: RngHolder, p: number): boolean;               // 確率 
 | `createPlayer` | `(id, team, role, params, homePos) => Player` | 実装済み。`pos` は `homePos` のコピー |
 | `formationPos` | `(side: TeamSide, role: Role, config: GameConfig) => Vec2` | 実装済み。比率→実座標 |
 | `createTeam` | `(side: TeamSide, config: GameConfig) => Team` | 実装済み。FW/MF/DF 各1人を定位置に配置 |
-| `decideAction` | `(player, state, config) => void` | **(未実装)** 行動ステートマシン |
-| `stepPlayer` | `(player, config) => void` | **(未実装)** 速度に従う位置更新 |
+| `decideAction` | `(player, state, config) => void` | 実装済み。ボール保持状況で4分岐し `player.state` と `player.vel` を更新する（保持中はシュート/パス/ドリブル判定、敵保持中はマーク、味方保持中はスペース移動、フリーボールは最近接選手のみ追跡） |
+| `stepPlayer` | `(player, config) => void` | 実装済み。`decideAction` が設定した `vel` に従って `pos += vel * dt` し、ピッチ範囲内にクランプする |
 
 ---
 
@@ -230,8 +230,8 @@ function chance(holder: RngHolder, p: number): boolean;               // 確率 
 |---|---|---|
 | `createInitialState` | `(config: GameConfig) => GameState` | 実装済み。両チーム3人を配置し `MATCH_START` で開始 |
 | `currentScore` | `(state: GameState) => { A: number; B: number }` | 実装済み。`scoreLog` から集計 |
-| `advancePhase` | `(state, config) => void` | **(未実装)** フェーズ遷移 |
-| `stepMatch` | `(state, config) => void` | **(未実装)** 1ターン進める |
+| `advancePhase` | `(state, config) => void` | 実装済み。フェーズごとのタイムアウト（`config.match.*Turns`）を見て次のフェーズへ遷移する。`MATCH_START`/`RESTART_SETUP`/`HALF_TIME`→`KICKOFF` への遷移はキックオフ再配置（選手を定位置へ・ボールを中央へ・`kickoffSide` の選手に持たせる）を伴う。`PLAYING` は `state.turn` がハーフ終了ターン数に達したら `HALF_TIME`（前半）または `MATCH_END`＋`finalizeResult`（後半）へ |
+| `stepMatch` | `(state, config) => void` | 実装済み。`turn`/`phaseTurn` を進め、`PLAYING` 中はゴール判定（`Pitch.isInGoalA`/`isInGoalB`）とアウトオブバウンズの簡易再開（中央へ戻し、最後のキッカーの相手チームで中央に最も近い選手に持たせる）を行い、最後に `advancePhase` を呼ぶ。ゴール検出はイベント駆動で即座に `GOAL_SCORED` へ遷移し `scoreLog` に追記、`kickoffSide` を失点側に設定する。選手AI・ボール物理・当たり判定の呼び出しは含まない（Simulator/マイルストーンEの責務） |
 | `finalizeResult` | `(state: GameState) => MatchResult` | 実装済み。同点は `"Draw"` |
 
 ---
