@@ -83,7 +83,10 @@ function checkGoal(state: GameState, pitch: Pitch): boolean {
   else if (pitch.isInGoalA(ball.pos)) scoringTeam = "B";
   if (scoringTeam === undefined) return false;
 
-  state.scoreLog.push({ team: scoringTeam, playerId: ball.lastKickerId ?? "", turn: state.turn });
+  // ドリブルでゴールに入った場合（キックを伴わない）は現在の保持者が得点者。
+  // それ以外（シュート/パスがそのままゴールした場合）は最後にキックした選手。
+  const scorerId = ball.status === "Possessed" ? ball.possessorId : ball.lastKickerId;
+  state.scoreLog.push({ team: scoringTeam, playerId: scorerId ?? "", turn: state.turn });
   state.phase = "GOAL_SCORED";
   state.phaseTurn = 0;
   // 失点したチームが次のキックオフ権を得る（features_3 §5.2）。

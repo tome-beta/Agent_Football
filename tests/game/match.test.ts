@@ -234,6 +234,22 @@ describe("stepMatch", () => {
     expect(state.ball.possessorId).toBeNull();
   });
 
+  it("credits the current possessor, not a stale lastKickerId, when the ball is dribbled in", () => {
+    const config = defaultConfig;
+    const state = createInitialState(config);
+    state.phase = "PLAYING";
+    const dribbler = state.teams.A.players[0];
+    // lastKickerId は以前パスを出した別の選手のまま（ドリブル中はキックしていないので更新されない）。
+    state.ball.pos = { x: 0, y: config.pitch.length / 2 };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = dribbler.id;
+    state.ball.lastKickerId = "A-someone-else";
+
+    stepMatch(state, config);
+
+    expect(state.scoreLog[0].playerId).toBe(dribbler.id);
+  });
+
   it("detects an own-ish goal in team A's net as a point for team B", () => {
     const config = defaultConfig;
     const state = createInitialState(config);

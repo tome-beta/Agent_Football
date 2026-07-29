@@ -14,6 +14,8 @@ function main() {
 
   const simulator = new Simulator(config, renderer, logger);
 
+  renderer.init();
+
   function loop() {
     simulator.step();
     if (simulator.state.phase !== "MATCH_END") {
