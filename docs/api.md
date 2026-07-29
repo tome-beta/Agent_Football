@@ -247,8 +247,8 @@ function loadConfig(partial?: Partial<GameConfig>): GameConfig;
 class Simulator {
   constructor(config: GameConfig, renderer: Renderer, logger?: Logger);
   readonly state: GameState;
-  step(): void;        // (未実装)
-  run(): GameState;    // (未実装)
+  step(): void;
+  run(): GameState;
 }
 
 interface Logger {
@@ -258,6 +258,10 @@ interface Logger {
 }
 class ConsoleLogger implements Logger {}   // 実装済み
 ```
+
+`Simulator.step` は1ターン分のメインループ（features_3 §13）: `KICKOFF`/`PLAYING` のときだけ全選手の `decideAction`→`stepPlayer`→`stepBall`→`resolveBallPossession` を実行し（`GOAL_SCORED`/`RESTART_SETUP`/`HALF_TIME` は選手・ボールを止めて `stepMatch` によるフェーズ進行だけ行う）、最後に `stepMatch` で状態を更新する。`logger` が渡されていれば、得点があった場合に `logGoal`、毎ターン `logTurn`、`MATCH_END` に達したら `logResult` を呼ぶ。`renderer` は毎ターン `clear`→`drawPitch`→`drawPlayers`→`drawBall`→`drawHud` の順で呼ばれる（`NullRenderer` はすべて no-op）。
+
+`Simulator.run` は `renderer.init()` を呼んだ後、`state.phase` が `MATCH_END` になるまで `step()` を繰り返し、最終的な `GameState` を返す。
 
 ---
 

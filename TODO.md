@@ -82,10 +82,10 @@
 - [x] チーム戦術パラメータ（aggressiveness 等2〜3個）の保持と参照 `match` — `TeamTactics`/`createTeam` はマイルストーンAで実装済み。マイルストーンDでは新規実装なし
 - [x] 試合終了・勝敗判定（スコア比較、同点はDraw） `match` — `advancePhase` が後半終了ターンで `MATCH_END` に遷移し `finalizeResult`（マイルストーンAで実装済み）を呼ぶ
 
-### マイルストーンE: シミュレーション統合（初MVP）
-- [ ] メインゲームループ（AI判定→選手移動→ボール更新→当たり判定→状態更新→次ターン） `simulator`
-- [ ] ゲームイベントログのコンソール出力（キックオフ・パス・シュート・ゴール・試合結果） `logger`
-- [ ] 描画なしで1試合を完走できることを確認（**MVP v0.1**）
+### マイルストーンE: シミュレーション統合（初MVP） ✅ 完了
+- [x] メインゲームループ（AI判定→選手移動→ボール更新→当たり判定→状態更新→次ターン） `simulator` — `Simulator.step`（`src/simulation/simulator.ts`）が `KICKOFF`/`PLAYING` 中のみ `decideAction`→`stepPlayer`→`stepBall`→`resolveBallPossession` を実行し、毎ターン `stepMatch` を呼ぶ。`tests/simulation/simulator.test.ts` で検証
+- [x] ゲームイベントログのコンソール出力（キックオフ・パス・シュート・ゴール・試合結果） `logger` — 既存の `ConsoleLogger`（マイルストーンA以前に実装済み）を `Simulator.step` から呼び出すように配線。得点時 `logGoal`、毎ターン `logTurn`、`MATCH_END` 到達時 `logResult`。パス/シュート個別ログは第一ステップでは見送り（`player.state` の変化で代替観測可能）
+- [x] 描画なしで1試合を完走できることを確認（**MVP v0.1**） — `npm run headless` が例外なく `MATCH_END` まで到達し、`Match result: Team A 9 - 8 Team B (Winner: A)` を出力することを確認済み
 
 ### マイルストーンF: 可視化（Canvas 2D）
 - [ ] 描画抽象インターフェースと NullRenderer（描画なし切替） `renderer`
