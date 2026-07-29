@@ -16,7 +16,9 @@ function main() {
 
   function loop() {
     simulator.step();
-    requestAnimationFrame(loop);
+    if (simulator.state.phase !== "MATCH_END") {
+      requestAnimationFrame(loop);
+    }
   }
 
   loop();
