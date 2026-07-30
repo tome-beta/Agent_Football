@@ -55,6 +55,30 @@ describe("decideAction: possession", () => {
     expect(state.ball.lastKickerId).toBe(passer.id);
   });
 
+  it("passes to a teammate beside/behind the carrier, not just ones straight ahead", () => {
+    // 回帰テスト: パス判定は視野角(移動方向基準)で絞り込まず、距離だけで判定する。
+    // ドリブル中は前方を向く(facingDirection=vel)ため、視野角チェックが残っていると
+    // フォーメーション上よくある「横や後ろの味方」が常にパス候補から漏れてしまっていた。
+    const config = loadConfig({ random: { seed: 1 } });
+    const state = createInitialState(config);
+    const passer = state.teams.A.players.find((p) => p.role === "MF")!;
+    const receiver = state.teams.A.players.find((p) => p.role === "FW")!;
+
+    passer.pos = { x: 0, y: 0 };
+    passer.vel = { x: 0, y: 6 }; // +y(ゴール方向)へ直進中 = 真横の受け手は旧ロジックだと視野外
+    receiver.pos = { x: 8, y: 1 }; // ほぼ真横（距離的にはパス圏内）
+    state.ball.pos = { ...passer.pos };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = passer.id;
+
+    config.ai.shootProbability = 0;
+
+    decideAction(passer, state, config);
+
+    expect(passer.state).toBe("Passing");
+    expect(state.ball.lastKickerId).toBe(passer.id);
+  });
+
   it("dribbles toward the goal when no pass target or shot is available", () => {
     const config = loadConfig({ random: { seed: 1 } });
     const state = createInitialState(config);
@@ -127,6 +151,23 @@ describe("decideAction: non-possessor", () => {
     decideAction(supporter, state, config);
 
     expect(supporter.state).toBe("MovingToSpace");
+  });
+
+  it("makes a forward run toward the attacking goal while supporting, not just drifting toward the ball", () => {
+    const config = loadConfig({ random: { seed: 1 } });
+    const state = createInitialState(config);
+    const supporter = state.teams.A.players.find((p) => p.role === "MF")!;
+    const carrier = state.teams.A.players.find((p) => p.role === "FW")!;
+    // ボールをホームポジションのすぐ近くに置く。もし旧ロジック(ボール方向にしか寄らない)なら
+    // 目標地点はほぼホームポジションのままで前進しないはず。
+    state.ball.pos = { ...supporter.homePos };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = carrier.id;
+
+    decideAction(supporter, state, config);
+
+    // チームAの攻撃方向は+y。ゴール方向への前進成分があるはず。
+    expect(supporter.vel.y).toBeGreaterThan(0);
   });
 
   it("tracks a free ball only if nearest, otherwise moves to formation", () => {

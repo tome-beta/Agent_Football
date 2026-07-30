@@ -133,17 +133,22 @@ function nearestOpponent(player: Player, oppTeam: Team, config: GameConfig): Pla
   return nearest;
 }
 
-/** 視野内・パス射程内の味方から、敵にマークされていない/ゴールに近い順で受け手を選ぶ（features_1 §3.1）。 */
+/**
+ * パス射程内の味方から、敵にマークされていない/ゴールに近い順で受け手を選ぶ（features_1 §3.1）。
+ *
+ * `isVisible` の視野角チェックはここでは使わない。ボールを保持している選手は
+ * 走りながら前だけを見ているわけではなく周囲を見渡せる想定なので、`facingDirection`
+ * （＝直近の移動方向）を基準にした狭い視野角でパス候補を弾くと、フォーメーション上
+ * 横や後ろにいる味方（実戦でもよくある）が常に候補から漏れてしまう。距離（`passDistance`）
+ * だけで絞り込む。
+ */
 function selectPassReceiver(player: Player, state: GameState, config: GameConfig): Player | undefined {
   const myTeam = state.teams[player.team];
   const oppTeam = state.teams[opposite(player.team)];
   const goal = attackGoal(player.team, config);
 
   const candidates = myTeam.players.filter(
-    (p) =>
-      p.id !== player.id &&
-      distance(player.pos, p.pos) <= config.ai.passDistance &&
-      isVisible(player, p.pos, config)
+    (p) => p.id !== player.id && distance(player.pos, p.pos) <= config.ai.passDistance
   );
   if (candidates.length === 0) return undefined;
 
@@ -213,11 +218,21 @@ function decideDefensiveAction(player: Player, state: GameState, config: GameCon
   moveToward(player, markPos, config);
 }
 
+/**
+ * 味方がボールを持っている間の受け手ポジショニング（features_1 §4.1）。
+ *
+ * 定位置からボール方向に少し寄るだけでは「パスを受けるための動き」に見えないため、
+ * 攻撃ゴール方向へのランも同時に加える。ボールに寄りすぎるとキャリアーと重なって
+ * パスコースを塞いでしまうので、ボール寄せは軽め・ゴール方向への前進は強めにする。
+ */
 function decideSupportAction(player: Player, state: GameState, config: GameConfig): void {
   player.state = "MovingToSpace";
   const home = formationPos(player.team, player.role, config);
-  const towardBall = scale(sub(state.ball.pos, home), 0.3);
-  moveToward(player, add(home, towardBall), config);
+  const goal = attackGoal(player.team, config);
+
+  const towardBall = scale(sub(state.ball.pos, home), 0.2);
+  const towardGoal = scale(sub(goal, home), 0.3);
+  moveToward(player, add(home, add(towardBall, towardGoal)), config);
 }
 
 function decideFreeBallAction(player: Player, state: GameState, config: GameConfig): void {
