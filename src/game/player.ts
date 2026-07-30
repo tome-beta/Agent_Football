@@ -207,7 +207,8 @@ function decideDefensiveAction(player: Player, state: GameState, config: GameCon
   player.state = "Marking";
   const own = ownGoal(player.team, config);
   const toOwn = sub(own, anchor);
-  const offset = Math.min(2, length(toOwn));
+  // tackleDistance より内側に寄せないと、狙い通りの位置に到達しても奪取判定に絶対届かない。
+  const offset = Math.min(config.ai.tackleDistance * 0.5, length(toOwn));
   const markPos = length(toOwn) < 1e-6 ? anchor : add(anchor, scale(normalize(toOwn), offset));
   moveToward(player, markPos, config);
 }

@@ -94,6 +94,27 @@ describe("decideAction: non-possessor", () => {
     expect(defender.state).toBe("Marking");
   });
 
+  it("marks close enough to actually be able to tackle (within tackleDistance once reached)", () => {
+    // 回帰テスト: マーク目標がタックル距離より遠いと、defender がそこへ到達しても
+    // resolveBallPossession の奪取判定に絶対届かず、守備が機能しなくなる。
+    const config = loadConfig({ random: { seed: 1 } });
+    const state = createInitialState(config);
+    const defender = state.teams.A.players.find((p) => p.role === "DF")!;
+    const opponent = state.teams.B.players.find((p) => p.role === "FW")!;
+    // 自ゴールから十分離れた位置に置き、goal-side オフセットが最大値に張り付くようにする。
+    opponent.pos = { x: 0, y: 0 };
+    state.ball.pos = { ...opponent.pos };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = opponent.id;
+    defender.pos = { ...opponent.pos };
+
+    decideAction(defender, state, config);
+    stepPlayer(defender, config);
+
+    const distToOpponent = Math.hypot(defender.pos.x - opponent.pos.x, defender.pos.y - opponent.pos.y);
+    expect(distToOpponent).toBeLessThanOrEqual(config.ai.tackleDistance);
+  });
+
   it("moves to space when a teammate has the ball", () => {
     const config = loadConfig({ random: { seed: 1 } });
     const state = createInitialState(config);
