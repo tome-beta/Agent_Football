@@ -24,8 +24,9 @@
   </style>
 </head>
 <body>
-  <!-- 論理サイズ 50m x 75m のピッチを 8px/m で描画する想定 -->
-  <canvas id="game" width="400" height="600"></canvas>
+  <!-- 論理サイズ 75m(横) x 50m(縦) のピッチ（ゴールが左右）を 8px/m で描画する想定。
+       実際のサイズは CanvasRenderer.init() が GameConfig から設定し直す。 -->
+  <canvas id="game" width="600" height="400"></canvas>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

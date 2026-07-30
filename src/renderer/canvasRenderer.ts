@@ -1,7 +1,7 @@
 import type { Renderer, GameConfig, Player, Ball, GameState, Vec2 } from "../types";
 import { currentScore } from "../game/match";
 
-/** 論理サイズ(m)をピクセルへ変換する係数。index.html の canvas サイズ(400x600)と対応する。 */
+/** 論理サイズ(m)をピクセルへ変換する係数。index.html の canvas サイズ(600x400)と対応する。 */
 const SCALE = 8;
 
 const TEAM_COLOR: Record<"A" | "B", string> = {
@@ -24,17 +24,22 @@ export class CanvasRenderer implements Renderer {
     this.config = config;
   }
 
-  /** ゲーム座標（原点中央・y はゴールライン方向）をキャンバス座標（原点左上）へ変換する。 */
+  /**
+   * ゲーム座標（原点中央・y はゴールライン方向）をキャンバス座標（原点左上）へ変換する。
+   *
+   * ゲーム座標系自体は縦向き（y方向にゴール）のままだが、画面表示は横向き
+   * （ゴールが左右）にしたいので、ここで x/y を入れ替えて描画する。
+   */
   private toCanvas(pos: Vec2): Vec2 {
     return {
-      x: this.canvas.width / 2 + pos.x * SCALE,
-      y: this.canvas.height / 2 + pos.y * SCALE,
+      x: this.canvas.width / 2 + pos.y * SCALE,
+      y: this.canvas.height / 2 + pos.x * SCALE,
     };
   }
 
   init(): void {
-    this.canvas.width = this.config.pitch.width * SCALE;
-    this.canvas.height = this.config.pitch.length * SCALE;
+    this.canvas.width = this.config.pitch.length * SCALE;
+    this.canvas.height = this.config.pitch.width * SCALE;
   }
 
   clear(): void {
@@ -48,31 +53,31 @@ export class CanvasRenderer implements Renderer {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     const topLeft = this.toCanvas({ x: -config.pitch.width / 2, y: -config.pitch.length / 2 });
-    const w = config.pitch.width * SCALE;
-    const h = config.pitch.length * SCALE;
+    const w = config.pitch.length * SCALE;
+    const h = config.pitch.width * SCALE;
 
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 2;
     ctx.strokeRect(topLeft.x, topLeft.y, w, h);
 
-    // ハーフウェイライン・センターサークル
+    // ハーフウェイライン（縦線）・センターサークル
     ctx.beginPath();
-    ctx.moveTo(topLeft.x, canvas.height / 2);
-    ctx.lineTo(topLeft.x + w, canvas.height / 2);
+    ctx.moveTo(canvas.width / 2, topLeft.y);
+    ctx.lineTo(canvas.width / 2, topLeft.y + h);
     ctx.stroke();
 
     ctx.beginPath();
     ctx.arc(canvas.width / 2, canvas.height / 2, 6 * SCALE, 0, Math.PI * 2);
     ctx.stroke();
 
-    // 両ゴール（ゴールライン上、goalWidth の幅で黄色く強調）
+    // 両ゴール（ピッチ左右の端、goalWidth の幅で黄色く強調）
     const goalHalf = (config.pitch.goalWidth / 2) * SCALE;
     ctx.strokeStyle = "#ffeb3b";
     ctx.lineWidth = 4;
-    for (const y of [topLeft.y, topLeft.y + h]) {
+    for (const x of [topLeft.x, topLeft.x + w]) {
       ctx.beginPath();
-      ctx.moveTo(canvas.width / 2 - goalHalf, y);
-      ctx.lineTo(canvas.width / 2 + goalHalf, y);
+      ctx.moveTo(x, canvas.height / 2 - goalHalf);
+      ctx.lineTo(x, canvas.height / 2 + goalHalf);
       ctx.stroke();
     }
   }
