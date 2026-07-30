@@ -6,22 +6,23 @@
 
 - **言語**: TypeScript
 - **ターゲット**: ブラウザ（Canvas 2D）／ Node ヘッドレス
-- **ステータス**: **マイルストーンB（ボール物理と当たり判定）完了**
-  - 実装済み: 型定義・設定（`GameConfig`）・ピッチ・初期状態生成（両チーム3人の配置）・決定的乱数・ベクトル演算・スコア集計・ボール物理（移動/摩擦/速度上限/キック）・当たり判定（キック距離/トラップ/保持追従/奪取）
-  - 未実装: 選手AI・試合進行・`Simulator`（`throw new Error("not implemented")` のスタブ）
-  - 次の作業: `TODO.md` のマイルストーンC（選手の自律行動AI）
+- **ステータス**: **マイルストーンE（シミュレーション統合・MVP v0.1）完了。マイルストーンF（Canvas 2D 可視化）は一部完了**
+  - 実装済み: 型定義・設定（`GameConfig`）・ピッチ・初期状態生成（両チーム3人の配置）・決定的乱数・ベクトル演算・スコア集計・ボール物理（移動/摩擦/速度上限/キック）・当たり判定（キック距離/トラップ/保持追従/奪取）・選手AI（行動ステートマシン・パス/シュート/マーク判定）・試合ルール（フェーズ遷移・ゴール判定・キックオフ/再開・勝敗判定）・`Simulator`（メインループ）・`CanvasRenderer`（ピッチ/選手/ボール/HUD描画）
+  - `npm run headless` は例外なく1試合（前後半計1800ターン）を完走し、`npm run dev` でブラウザ上でも試合が自動再生される
+  - 未実装: マイルストーンFの残り（開始/一時停止ボタン・選手パラメータ調整UI・デバッグオーバーレイ）、マイルストーンG（テスト・調整）
+  - 次の作業: `TODO.md` のマイルストーンF続き、またはG
 
 ## 2段階開発アプローチ
 
-### 第一段階：ロジック完成（描画なし・Node ヘッドレス実行）— 現在ここ
+### 第一段階：ロジック完成（描画なし・Node ヘッドレス実行）— 完了
 - 型定義、ゲームロジック、物理演算、試合シミュレーションを Node.js でヘッドレス実行
 - 描画層に依存しない純ロジック実装
-- テストはこの段階で充実させる
-- ゴール: `npm run headless` で1試合を完走できること（MVP v0.1）
+- ゴール: `npm run headless` で1試合を完走できること（**MVP v0.1 達成**）
 
-### 第二段階：Canvas 2D 描画統合
-- 完成したロジックを入力として Canvas 2D で可視化
+### 第二段階：Canvas 2D 描画統合 — 進行中
+- 完成したロジックを入力として Canvas 2D で可視化（`npm run dev`）
 - 描画層は `src/renderer/` に集約し、ゲームロジック層（`src/game/`）は描画に依存しない設計を維持
+- ピッチ・選手・ボール・HUD の描画は実装済み。開始/一時停止ボタンやパラメータ調整UIなどの操作系は未実装
 
 ## ディレクトリ構成
 
@@ -40,7 +41,7 @@ project/
 │   │   └── utils.ts          # ベクトル演算
 │   ├── renderer/             # 描画層（Canvas 2D）
 │   │   ├── index.ts
-│   │   ├── canvasRenderer.ts # Canvas 2D 実装（第二段階）
+│   │   ├── canvasRenderer.ts # Canvas 2D 実装（ピッチ/選手/ボール/HUD描画）
 │   │   └── nullRenderer.ts   # ダミー実装（ヘッドレス/テスト用）
 │   ├── simulation/           # シミュレーション実行系
 │   │   ├── index.ts
@@ -76,7 +77,7 @@ npm run build        # 本番ビルド（型チェック + Vite bundle）
 
 > `npx` が PATH に無い環境では `./node_modules/.bin/vitest run` のように直接叩いてください。
 
-`npm run headless` は `Simulator.run()` が未実装のうちは "not implemented" で停止します（想定どおり）。エラーなく試合結果が出力されれば MVP v0.1 到達です。
+`npm run headless` は例外なく試合結果（`Match result: Team A n - m Team B (Winner: ...)`）を出力して終了します。`npm run dev` を開くと自動的に試合が再生されます（操作は不要）。
 
 ## 実装するときの約束
 
@@ -95,5 +96,6 @@ npm run build        # 本番ビルド（型チェック + Vite bundle）
 - [docs/development_guide.md](docs/development_guide.md) — 実装手順・テストの書き方
 - [TODO.md](TODO.md) — マイルストーンごとの進捗
 - `specification/features_*.md` — 各機能の設計意図。マイルストーン着手前に読むこと
+- `.claude/skills/` — 定型作業のスキル（`implement-stub`＝スタブ実装の型、`verify`＝検証手順、`find-bugs`＝再現検証付きバグ調査）
 
 ドキュメントとコードが食い違う場合は、**常に `src/types.ts` と実際のソースコードが正**です。
