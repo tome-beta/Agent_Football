@@ -24,8 +24,8 @@ npm run build       # tsc --noEmit && vite build
 
 ## 2. 開発の2段階
 
-1. **第一段階（現在）**: 描画なし・Node ヘッドレスでロジックを完成させる。`npm run headless` で1試合を最後まで走らせられる状態がゴール（MVP v0.1）。
-2. **第二段階**: 完成したロジックの上に Canvas 2D 描画を載せる。
+1. **第一段階（完了）**: 描画なし・Node ヘッドレスでロジックを完成させる。`npm run headless` で1試合を最後まで走らせられる状態がゴール（**MVP v0.1 達成**）。
+2. **第二段階（進行中）**: 完成したロジックの上に Canvas 2D 描画を載せる。ピッチ/選手/ボール/HUD 描画、一時停止/再開、`PlayerParams` 調整UI は実装済み。デバッグオーバーレイ（任意項目）が残っている。
 
 `src/game/*` は `src/renderer/*` を import せず、DOM/Canvas API にも触れない。この制約があるからこそ同じロジックを Node とブラウザの両方で動かせる。
 
@@ -33,7 +33,7 @@ npm run build       # tsc --noEmit && vite build
 
 ## 3. 実装の進め方
 
-`TODO.md` のマイルストーン順（A → B → C → D → E）に進める。着手前に対応する `specification/features_*.md` を読むこと。コードや型に現れない「なぜそうするか」がそこにある。
+`TODO.md` のマイルストーン順（A → B → C → D → E → F → G）に進める。着手前に対応する `specification/features_*.md` を読むこと。コードや型に現れない「なぜそうするか」がそこにある。
 
 各関数は `throw new Error("not implemented")` のスタブとして既に置かれている。**シグネチャを勝手に変えず、まず中身を埋める**。変更が必要なら `docs/api.md` も同時に更新する。
 
@@ -90,15 +90,16 @@ describe("createInitialState", () => {
 npm run headless
 ```
 
-`Simulator.run()` が未実装のうちは "not implemented" で落ちる。マイルストーンE の完了条件は、このコマンドが1試合を走り切って `ConsoleLogger` が結果を出力すること。
+`Simulator.run()` は実装済み。例外なく `MATCH_END` まで到達し、`ConsoleLogger` が `Match result: Team A n - m Team B (Winner: ...)` を出力する。
 
 ---
 
-## 7. 第二段階（Canvas 描画）に入るとき
+## 7. 第二段階（Canvas 描画）
 
-- `CanvasRenderer` を `Renderer` インターフェースに沿って実装する。ロジック側は一切変更しない。
-- ワールド座標（原点中央・メートル）→ スクリーン座標（左上原点・ピクセル）の変換を1箇所にまとめる。`index.html` の canvas は 400×600 px、ピッチは 50×75 m なので 8 px/m。
-- `index.html` に試合開始ボタンと `PlayerParams` 調整UIを追加する（`TODO.md` マイルストーンF）。
+- `CanvasRenderer`（`src/renderer/canvasRenderer.ts`）は `Renderer` インターフェースに沿って実装済み。ロジック側（`src/game/*`）は一切変更していない。
+- ワールド座標（原点中央・メートル、y=ゴールライン方向）→ スクリーン座標（左上原点・ピクセル）の変換は `CanvasRenderer.toCanvas` に1箇所にまとめてある。**表示だけ横向き**にするため x/y を入れ替えて変換している（ゲームロジックの座標系自体は変えていない）。`index.html` の canvas は 600×400 px、ピッチは 75×50 m（length×width）なので 8 px/m。`init()` が `config.pitch` から canvas サイズを設定し直すので、独自ループを組む場合は呼び忘れに注意（`src/main.ts` は起動時に1回呼ぶ）。
+- `index.html` に一時停止/再開ボタン・再スタートボタン・役割別（FW/MF/DF）`PlayerParams` 調整スライダーを実装済み（`TODO.md` マイルストーンF）。スライダーの変更は「再スタート」を押すまで反映されない（既存の `Simulator`/選手には即時反映しない設計）。
+- ブラウザの一時停止/再開は `requestAnimationFrame` の連鎖を止めずに `running` フラグで `Simulator.step()` の呼び出しだけを止める設計にしている。連鎖自体を都度張り直す実装は「一時停止直後に再開を押すと反映されない」タイミング問題を起こしたため避けること。
 
 ---
 

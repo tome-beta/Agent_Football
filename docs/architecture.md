@@ -31,7 +31,7 @@
 
 ### 3. Renderer 層 (`src/renderer/`)
 **描画層**
-- `canvasRenderer.ts`: Canvas 2D による具体的な実装（未実装。第二段階で着手）
+- `canvasRenderer.ts`: Canvas 2D による具体的な実装。ピッチ・選手・ボール・HUD を描画する。ゲーム座標（y=ゴールライン方向）はそのままに、`toCanvas` で x/y を入れ替えて描画するため、画面上はピッチが横向き（ゴールが左右）になる
 - `nullRenderer.ts`: ダミー実装（テスト・ヘッドレス時用）
 
 抽象インターフェース `Renderer` は Types 層（`src/types.ts`）に置いています。Renderer 層が「差し替え可能な実装の集まり」であるのに対し、その契約は game / simulation 層からも参照されるためです。
@@ -45,18 +45,19 @@
 
 ### 4. Simulation 層 (`src/simulation/`)
 **Game と Renderer を統合して実行**
-- `simulator.ts`: シミュレータ本体（ゲームループ）
-- `config.ts`: 設定（フレームレート、ゲーム時間など）
-- `logger.ts`: ロギング（デバッグ出力）
+- `simulator.ts`: シミュレータ本体（`step()`/`run()`）
+- `config.ts`: `loadConfig()` — デフォルト設定にセクション単位で部分上書きをマージする
+- `logger.ts`: `ConsoleLogger`（得点・毎ターン・試合結果のコンソール出力）
 
 ### 5. エントリポイント
 - `src/headless.ts`: Node.js 環境（第一段階）
   - Renderer は `nullRenderer`
-  - ファイルにログ出力、またはコンソール出力
+  - `Simulator.run()` を1回呼んで最後までシミュレートし、`ConsoleLogger` で結果を出力
   
 - `src/main.ts`: ブラウザ環境（第二段階）
   - Renderer は `canvasRenderer`
-  - Canvas に描画
+  - `Simulator.run()` は使わず、独自の `requestAnimationFrame` ループで `Simulator.step()` を毎フレーム呼ぶ（一時停止中も rAF の連鎖自体は止めず、`running` フラグで `step()` の呼び出しだけを止める）
+  - `index.html` の操作パネル（一時停止/再開ボタン・役割別 `PlayerParams` スライダー・再スタートボタン）のイベントハンドラもここに実装。再スタートはスライダーの値から `GameConfig` を作り直し、新しい `Simulator` を生成する（`Renderer` インスタンスは使い回す）
 
 ## 依存グラフ
 
@@ -81,6 +82,10 @@ simulation (types + game + renderer 依存)
 ┌──────────────────────────────────────────────────────┐
 │ Simulator.step()                                     │
 ├──────────────────────────────────────────────────────┤
+│ phase が KICKOFF/PLAYING のときだけ 1〜4 を実行       │
+│ （GOAL_SCORED/RESTART_SETUP/HALF_TIME は選手・ボール │
+│  を止め、5だけ行う）                                  │
+│                                                        │
 │ 1. decideAction(player, state, config)  … 全選手     │
 │      行動ステートマシンで意思決定・キック指示        │
 │    ↓                                                 │
@@ -103,7 +108,7 @@ simulation (types + game + renderer 依存)
 └──────────────────────────────────────────────────────┘
 ```
 
-ブラウザでは `requestAnimationFrame` が、ヘッドレスでは `Simulator.run()` のループがこの `step()` を駆動します。ゲームロジック側はどちらで動かされているかを知りません。
+ヘッドレスでは `Simulator.run()` が `MATCH_END` になるまでこの `step()` を同期的に繰り返します。ブラウザでは `src/main.ts` が独自の `requestAnimationFrame` ループから `step()` を毎フレーム呼びます（一時停止中は `step()` の呼び出しだけをスキップし、rAF の連鎖自体は止めません）。ゲームロジック側はどちらで動かされているかを知りません。
 
 ## 拡張性
 
@@ -121,5 +126,4 @@ simulation (types + game + renderer 依存)
   - Simulator 全体の動作テスト
   - nullRenderer で検証
   
-- **描画テスト** (手動または E2E):
-  - Canvas 描画が正しいか確認（後段階）
+- **描画テスト**: `CanvasRenderer` は DOM/Canvas API に依存するため（`vitest.config.ts` の `environment: 'node'` では動かせない）、自動テストの対象外。`npm run dev` でブラウザから目視確認する

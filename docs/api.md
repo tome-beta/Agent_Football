@@ -279,4 +279,6 @@ interface Renderer {
 ```
 
 - `NullRenderer` — 全メソッド no-op。ヘッドレス実行・テスト用。**Node 側からは `src/renderer/nullRenderer` を直接 import すること**（`src/renderer/index.ts` 経由だと DOM 依存の `CanvasRenderer` を巻き込む）。
-- `CanvasRenderer` — **(未実装)** 第二段階で実装する。
+- `CanvasRenderer` — 実装済み。ピッチ（緑地・白線・センターサークル・両ゴール黄色ハイライト）・選手（チーム色の円＋役割ラベル）・ボール（白丸）・HUD（スコア/ターン/フェーズ/前後半のテキスト）を描画する。
+  - `init()` が `canvas.width`/`canvas.height` を `config.pitch.length * SCALE` / `config.pitch.width * SCALE`（`SCALE = 8` px/m）に設定する。**呼び出し側が必ず `init()` を呼ぶこと**（`Simulator.run()` は呼ぶが、独自ループを組む場合は呼び忘れに注意 — `src/main.ts` は過去にこれを忘れて発覚した経緯がある）。
+  - 座標変換（`toCanvas`）はゲーム座標の x/y を入れ替えて描画する。ゲームロジック側の座標系（y=ゴールライン方向）は変えず、**表示だけ横向き（ゴールが左右）にする**ための処理。`index.html` の `<canvas>` は 600×400（75m×50m × 8px/m）。

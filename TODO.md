@@ -97,15 +97,15 @@
 - [x] ゲームイベントログのコンソール出力（キックオフ・パス・シュート・ゴール・試合結果） `logger` — 既存の `ConsoleLogger`（マイルストーンA以前に実装済み）を `Simulator.step` から呼び出すように配線。得点時 `logGoal`、毎ターン `logTurn`、`MATCH_END` 到達時 `logResult`。パス/シュート個別ログは第一ステップでは見送り（`player.state` の変化で代替観測可能）
 - [x] 描画なしで1試合を完走できることを確認（**MVP v0.1**） — `npm run headless` が例外なく `MATCH_END` まで到達し、`Match result: Team A 9 - 8 Team B (Winner: A)` を出力することを確認済み
 
-### マイルストーンF: 可視化（Canvas 2D）
-- [ ] 描画抽象インターフェースと NullRenderer（描画なし切替） `renderer`
-- [ ] ピッチ描画（矩形・ライン・ゴール） `renderer`
-- [ ] 選手描画（チーム色・番号・向き）／ボール描画 `renderer`
-- [ ] HUD（スコア・時間・ボール所有チーム）表示 `renderer`
-- [ ] デバッグオーバーレイ（目標位置・速度ベクトル・AI状態）※任意 `renderer`
-- [ ] `index.html` に試合開始ボタンを追加（シミュレーション開始/一時停止トリガー）
-- [ ] `index.html` に選手パラメータ設定UI（`PlayerParams` の speed / passAccuracy / shootPower / vision / aggressiveness をスライダー等で調整）を追加
-- [ ] リアルタイムで試合を閲覧できることを確認（**MVP v0.2**）
+### マイルストーンF: 可視化（Canvas 2D）— デバッグオーバーレイ以外は完了
+- [x] 描画抽象インターフェースと NullRenderer（描画なし切替） `renderer` — `Renderer`（`src/types.ts`）と `NullRenderer`（マイルストーンAで実装済み）
+- [x] ピッチ描画（矩形・ライン・ゴール） `renderer` — `CanvasRenderer.drawPitch`（緑地・白線・センターサークル・両ゴール黄色ハイライト）。表示は横向き（ゴールが左右）にするため `toCanvas` でゲーム座標のx/yを入れ替えている（ゲームロジックの座標系自体は不変）
+- [x] 選手描画（チーム色・番号・向き）／ボール描画 `renderer` — `CanvasRenderer.drawPlayers`（チーム色の円＋役割ラベル）/`drawBall`（白丸）。番号・向き矢印は省略し役割ラベルで代替
+- [x] HUD（スコア・時間・ボール所有チーム）表示 `renderer` — `CanvasRenderer.drawHud`（スコア・ターン・フェーズ・前後半をテキスト表示）。ボール所有チームの専用ハイライトは省略（選手の色で判別可能）
+- [ ] デバッグオーバーレイ（目標位置・速度ベクトル・AI状態）※任意 `renderer` — 未実装（優先度低のため見送り中）
+- [x] `index.html` に試合開始ボタンを追加（シミュレーション開始/一時停止トリガー） — 一時停止/再開トグルボタンと再スタートボタンを実装。`requestAnimationFrame` の連鎖は止めず `running` フラグで `step()` 呼び出しだけを止める設計（連鎖を都度張り直す実装はタイミング問題があり不採用）
+- [x] `index.html` に選手パラメータ設定UI（`PlayerParams` の speed / passAccuracy / shootPower / vision / aggressiveness をスライダー等で調整）を追加 — 役割別（FW/MF/DF）スライダー。再スタートボタンで反映した `GameConfig` から新しい `Simulator` を生成する
+- [x] リアルタイムで試合を閲覧できることを確認（**MVP v0.2**） — `npm run dev` でブラウザ上で試合が自動再生されることを確認済み
 
 ### マイルストーンG: テスト・調整
 - [ ] 各モジュールのユニットテスト（ボール物理・当たり判定・ゴール判定・AI）
