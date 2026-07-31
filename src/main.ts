@@ -1,29 +1,148 @@
 import { loadConfig } from "./simulation";
 import { CanvasRenderer } from "./renderer";
 import { Simulator, ConsoleLogger } from "./simulation";
+import { defaultConfig } from "./config/default";
+import type { GameConfig, PlayerParams, Role } from "./types";
+
+const ROLES: Role[] = ["FW", "MF", "DF"];
+
+/** [パラメータキー, ラベル, min, max, step] */
+const PARAM_SLIDERS: Array<[keyof PlayerParams, string, number, number, number]> = [
+  ["speed", "速度", 3, 9, 0.1],
+  ["passAccuracy", "パス精度", 0, 1, 0.05],
+  ["shootPower", "シュート力", 0, 1, 0.05],
+  ["vision", "視野(度)", 40, 160, 5],
+  ["aggressiveness", "積極性", 0, 1, 0.05],
+];
+
+function buildControls(root: HTMLElement): Record<Role, Record<keyof PlayerParams, HTMLInputElement>> {
+  const inputs = {} as Record<Role, Record<keyof PlayerParams, HTMLInputElement>>;
+
+  for (const role of ROLES) {
+    const group = document.createElement("div");
+    group.className = "role-group";
+
+    const heading = document.createElement("h3");
+    heading.textContent = role;
+    group.appendChild(heading);
+
+    const roleInputs = {} as Record<keyof PlayerParams, HTMLInputElement>;
+
+    for (const [key, label, min, max, step] of PARAM_SLIDERS) {
+      const row = document.createElement("div");
+      row.className = "param-row";
+
+      const labelEl = document.createElement("label");
+      labelEl.textContent = label;
+
+      const input = document.createElement("input");
+      input.type = "range";
+      input.min = String(min);
+      input.max = String(max);
+      input.step = String(step);
+      input.value = String(defaultConfig.team.roleParams[role][key]);
+
+      const output = document.createElement("output");
+      output.textContent = input.value;
+      input.addEventListener("input", () => {
+        output.textContent = input.value;
+      });
+
+      row.appendChild(labelEl);
+      row.appendChild(input);
+      row.appendChild(output);
+      group.appendChild(row);
+
+      roleInputs[key] = input;
+    }
+
+    inputs[role] = roleInputs;
+    root.appendChild(group);
+  }
+
+  return inputs;
+}
+
+function readConfigFromControls(
+  inputs: Record<Role, Record<keyof PlayerParams, HTMLInputElement>>
+): GameConfig {
+  const roleParams = {} as Record<Role, PlayerParams>;
+  for (const role of ROLES) {
+    roleParams[role] = {
+      speed: Number(inputs[role].speed.value),
+      passAccuracy: Number(inputs[role].passAccuracy.value),
+      shootPower: Number(inputs[role].shootPower.value),
+      vision: Number(inputs[role].vision.value),
+      aggressiveness: Number(inputs[role].aggressiveness.value),
+    };
+  }
+
+  return loadConfig({
+    team: {
+      roleParams,
+      formation: defaultConfig.team.formation,
+      tactics: defaultConfig.team.tactics,
+      names: defaultConfig.team.names,
+    },
+  });
+}
 
 function main() {
   const canvasElement = document.getElementById("game") as HTMLCanvasElement | null;
-  if (!canvasElement) {
-    throw new Error("Canvas element not found");
+  const roleGroupsRoot = document.getElementById("role-groups");
+  const toggleBtn = document.getElementById("toggleBtn") as HTMLButtonElement | null;
+  const restartBtn = document.getElementById("restartBtn") as HTMLButtonElement | null;
+  if (!canvasElement || !roleGroupsRoot || !toggleBtn || !restartBtn) {
+    throw new Error("Required DOM elements not found");
   }
 
-  const config = loadConfig();
-  const renderer = new CanvasRenderer(canvasElement, config);
-  const logger = new ConsoleLogger();
+  const inputs = buildControls(roleGroupsRoot);
 
-  const simulator = new Simulator(config, renderer, logger);
-
+  const renderer = new CanvasRenderer(canvasElement, defaultConfig);
   renderer.init();
 
+  let simulator = new Simulator(loadConfig(), renderer, new ConsoleLogger());
+  let running = true;
+  // requestAnimationFrame の連鎖が現在生きているか。MATCH_END で連鎖が止まるので、
+  // 再スタート時にもう一度動かす必要があるかどうかの判定に使う。
+  let loopAlive = false;
+
+  // rAF の連鎖自体は一時停止中も止めない。running フラグで simulator.step() の
+  // 実行だけを止めることで、一時停止/再開の反映タイミングが requestAnimationFrame の
+  // ID管理に依存しないようにする（前回の実装は rafId が非null のままの一瞬に
+  // 再開を押すと反映されないことがあった）。
   function loop() {
-    simulator.step();
-    if (simulator.state.phase !== "MATCH_END") {
+    if (running) {
+      simulator.step();
+    }
+    if (simulator.state.phase === "MATCH_END") {
+      loopAlive = false;
+      return;
+    }
+    requestAnimationFrame(loop);
+  }
+
+  function ensureLoopAlive() {
+    if (!loopAlive) {
+      loopAlive = true;
       requestAnimationFrame(loop);
     }
   }
 
-  loop();
+  toggleBtn.addEventListener("click", () => {
+    running = !running;
+    toggleBtn.textContent = running ? "一時停止" : "再開";
+  });
+
+  restartBtn.addEventListener("click", () => {
+    const config = readConfigFromControls(inputs);
+    simulator = new Simulator(config, renderer, new ConsoleLogger());
+    running = true;
+    toggleBtn.textContent = "一時停止";
+    ensureLoopAlive();
+  });
+
+  ensureLoopAlive();
 }
 
 main();
