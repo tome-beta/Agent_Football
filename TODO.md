@@ -31,6 +31,16 @@
 
 ---
 
+## `specification/` と実装の既知の差分（意図的な簡略化・設計変更）
+
+2026-07-31 に `specification/features_*.md` を通読して確認した、ドキュメント化されていなかった差分。いずれもバグではなく、`TODO.md` の「第一ステップは簡略化」方針に沿った意図的な選択。
+
+- **アウトオブバウンズの再開位置**: `features_2_ball_pitch.md` §3.2〜3.4 はスローイン（出た地点のy座標）／コーナー（コーナー付近）／ゴールキック（ゴールエリア内）で再開位置を区別しているが、実装（`handleOutOfBounds` in `src/game/match.ts`）は理由を問わず**中央付近へ戻す**簡易版に一本化している。マイルストーンDの該当項目に「簡易再開」と明記済みの通り。
+- **シュート角度判定が未実装**: `features_1_player_ai.md` §3.2 は角度判定を優先度「高・◎」としているが、`decidePossessionAction`（`src/game/player.ts`）は `shootDistance` の距離のみでシュート可否を判定しており、ゴールに対する角度・GKの遮蔽は考慮していない。
+- **ゲームループの駆動方式**: `features_4_tech_roadmap.md` §3.3 は「60FPS + `requestAnimationFrame` の accumulator で複数ティック処理」を想定していたが、実装は `CLAUDE.md` に明記の通り「1ターン = `config.physics.dt`(0.1秒) のターン制」で、フレームレートに紐づかない離散シミュレーション。`Simulator.step()` は1回の呼び出しで1ターンだけ進める。
+
+---
+
 ## 全体方針
 
 - **言語/描画**: TypeScript（ブラウザ）。まずは**描画なし（純ロジック、Node ヘッドレス実行）でシミュレーションを完成**させ、後から Canvas 2D で可視化する2段階アプローチ。
