@@ -25,18 +25,18 @@ export const defaultConfig: GameConfig = {
     maxSpeed: 30,
   },
   ai: {
-    ballControlDistance: 1.5,
-    trapDistance: 2.0,
-    trapMaxBallSpeed: 5,
-    tackleDistance: 1.0,
-    passDistance: 15,
-    shootDistance: 20,
-    shootProbability: 0.3,
+    ballControlDistance: 1.5, // キック可能と判定する選手-ボール距離 [m]
+    trapDistance: 2.0, // トラップして保持に移れる距離 [m]（キック距離より広め）
+    trapMaxBallSpeed: 5, // この速度[m/s]を超えるボールはトラップ失敗
+    tackleDistance: 1.0, // 相手保持者からボールを奪える距離 [m]
+    passDistance: 15, // パス受け手候補として検討する距離 [m]
+    shootDistance: 20, // シュートを検討し始める距離 [m]
+    shootProbability: 0.3, // シュート成功率の基準係数（shootPower・aggressivenessと掛け合わせる）
     // features_1 §8.1 の視野距離レンジ(10〜25m)の中間よりやや広め。
     visionDistance: 22,
-    passSpeed: 10,
-    shootSpeed: 22,
-    aimErrorMaxDeg: 12,
+    passSpeed: 10, // パスの基準初速 [m/s]
+    shootSpeed: 22, // シュートの基準初速上限 [m/s]（shootPowerを掛けて減衰させる）
+    aimErrorMaxDeg: 12, // passAccuracy/shootPowerが0のときの最大キック角度誤差 [度]
   },
   team: {
     // features_1 §8.2 のサンプル選手データに準拠。

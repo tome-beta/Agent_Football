@@ -15,6 +15,7 @@ const PARAM_SLIDERS: Array<[keyof PlayerParams, string, number, number, number]>
   ["aggressiveness", "積極性", 0, 1, 0.05],
 ];
 
+/** 役割(FW/MF/DF)ごとに `PARAM_SLIDERS` のスライダー行を組み立てて `root` に追加し、入力要素への参照を返す。 */
 function buildControls(root: HTMLElement): Record<Role, Record<keyof PlayerParams, HTMLInputElement>> {
   const inputs = {} as Record<Role, Record<keyof PlayerParams, HTMLInputElement>>;
 
@@ -63,6 +64,7 @@ function buildControls(root: HTMLElement): Record<Role, Record<keyof PlayerParam
   return inputs;
 }
 
+/** スライダーの現在値から役割別 `roleParams` を作り、デフォルト設定に重ねた `GameConfig` を返す。 */
 function readConfigFromControls(
   inputs: Record<Role, Record<keyof PlayerParams, HTMLInputElement>>
 ): GameConfig {
@@ -87,6 +89,7 @@ function readConfigFromControls(
   });
 }
 
+/** ブラウザ実行のエントリポイント（`index.html` から読み込まれる）。DOM 構築・操作パネルの配線・試合ループの起動を行う。 */
 function main() {
   const canvasElement = document.getElementById("game") as HTMLCanvasElement | null;
   const roleGroupsRoot = document.getElementById("role-groups");

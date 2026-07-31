@@ -14,6 +14,7 @@ export class CanvasRenderer implements Renderer {
   private ctx: CanvasRenderingContext2D;
   private config: GameConfig;
 
+  /** `canvas` から 2D コンテキストを取得して保持する。サイズ設定は `init()` が別途行う。 */
   constructor(canvas: HTMLCanvasElement, config: GameConfig) {
     const ctx = canvas.getContext("2d");
     if (ctx === null) {
@@ -46,6 +47,7 @@ export class CanvasRenderer implements Renderer {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
   }
 
+  /** ピッチ全体（緑地・外枠・ハーフウェイライン・センターサークル・両ゴール）を描画する。 */
   drawPitch(config: GameConfig): void {
     const { ctx, canvas } = this;
 
@@ -82,6 +84,7 @@ export class CanvasRenderer implements Renderer {
     }
   }
 
+  /** 選手をチーム色の円で描画し、円の上に役割（FW/MF/DF）をラベル表示する。 */
   drawPlayers(players: Player[]): void {
     const { ctx } = this;
     const radiusPx = this.config.player.radius * SCALE;
@@ -101,6 +104,7 @@ export class CanvasRenderer implements Renderer {
     }
   }
 
+  /** ボールを白丸で描画する。半径は物理サイズ(m)基準だが、小さすぎて見えなくならないよう最小3pxを保証する。 */
   drawBall(ball: Ball): void {
     const { ctx } = this;
     const pos = this.toCanvas(ball.pos);
@@ -115,6 +119,7 @@ export class CanvasRenderer implements Renderer {
     ctx.stroke();
   }
 
+  /** スコア・ターン数・フェーズ・前後半をキャンバス左上にテキストで表示する。 */
   drawHud(state: GameState): void {
     const { ctx } = this;
     const score = currentScore(state);

@@ -3,6 +3,7 @@ import { loadConfig } from "./simulation";
 import { NullRenderer } from "./renderer/nullRenderer";
 import { Simulator, ConsoleLogger } from "./simulation";
 
+/** Node ヘッドレス実行のエントリポイント（`npm run headless`）。描画なしで1試合を最後まで走らせる。 */
 async function main() {
   const config = loadConfig();
   const renderer = new NullRenderer();

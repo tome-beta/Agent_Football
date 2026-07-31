@@ -3,6 +3,7 @@ import { add, sub, scale, length, normalize, distance } from "./utils";
 import { kickBall } from "./ball";
 import { nextRandomRange, chance } from "./random";
 
+/** `homePos` を初期位置として選手を1人生成する（`pos`/`homePos` は別オブジェクトとしてコピーする）。 */
 export function createPlayer(
   id: string,
   team: TeamSide,

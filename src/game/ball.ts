@@ -1,6 +1,7 @@
 import type { Ball, GameConfig, Vec2 } from "../types";
 import { add, scale, length, normalize, clampMagnitude } from "./utils";
 
+/** 中央・静止・フリー状態のボールを生成する。 */
 export function createBall(): Ball {
   return {
     pos: { x: 0, y: 0 },
@@ -40,8 +41,9 @@ export function stepBall(ball: Ball, config: GameConfig): void {
  * 選手AIの指定した方向・強度をボール速度に変換する（features_2 §1.4）。
  *
  * `dir` は正規化して扱うので大きさは無視され、速さは `power` [m/s] が決める。
- * 第一ステップでは方向の誤差を乗せない（決定的）。誤差モデルは選手AI側で
- * `passAccuracy` を使って dir を揺らす形で第二ステップに導入する。
+ * この関数自体は方向の誤差を乗せない（決定的）。誤差モデルは呼び出し側（選手AI、
+ * `src/game/player.ts` の `applyAimError`）が `passAccuracy`/`shootPower` を使って
+ * `dir` を事前に揺らしてから渡す形で実装している。
  *
  * キックするとボールは保持から解放される。`lastKickerId` はここでのみ更新する
  * （奪取では更新しない）。
