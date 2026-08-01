@@ -29,6 +29,10 @@ export const defaultConfig: GameConfig = {
     trapDistance: 2.0, // トラップして保持に移れる距離 [m]（キック距離より広め）
     trapMaxBallSpeed: 5, // この速度[m/s]を超えるボールはトラップ失敗
     tackleDistance: 1.0, // 相手保持者からボールを奪える距離 [m]
+    interceptDistance: 1.5, // パス/シュートの軌跡（線分）にインターセプトを試みる距離 [m]（速度制限なし）
+    // 0.2/0.4/0.7/1.0 を20試合ずつ比較し、0.2が最も互角（勝敗8/6/6、総得点50-50）だった。
+    // 0.4以上は守備側（特にB）が有利になりすぎる。詳細は TODO.md。
+    interceptChance: 0.2, // 軌跡ちょうど上にいるときの成功確率上限（距離に応じて0まで減衰）
     passDistance: 15, // パス受け手候補として検討する距離 [m]
     shootDistance: 20, // シュートを検討し始める距離 [m]
     shootProbability: 0.3, // シュート成功率の基準係数（shootPower・aggressivenessと掛け合わせる）

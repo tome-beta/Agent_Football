@@ -32,6 +32,17 @@ export function distance(a: Vec2, b: Vec2): number {
   return length(sub(a, b));
 }
 
+/** 点 `point` と、線分 `segA`-`segB` との最短距離。線分が点に潰れている場合は単純な2点間距離になる。 */
+export function distanceToSegment(point: Vec2, segA: Vec2, segB: Vec2): number {
+  const segVec = sub(segB, segA);
+  const segLenSq = segVec.x * segVec.x + segVec.y * segVec.y;
+  if (segLenSq < 1e-9) return distance(point, segA);
+
+  const t = Math.max(0, Math.min(1, ((point.x - segA.x) * segVec.x + (point.y - segA.y) * segVec.y) / segLenSq));
+  const projected = add(segA, scale(segVec, t));
+  return distance(point, projected);
+}
+
 /** ベクトルの大きさが max を超えていたら、向きを保ったまま max まで縮める。 */
 export function clampMagnitude(v: Vec2, max: number): Vec2 {
   const len = length(v);

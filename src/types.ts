@@ -128,6 +128,13 @@ export interface GameConfig {
     trapMaxBallSpeed: number;
     /** 相手保持者からボールを奪える距離 [m]。 */
     tackleDistance: number;
+    /**
+     * パス/シュートで飛んでいる（Free状態の）ボールの軌跡（1ターン分の移動線分）に
+     * インターセプトを試みる距離 [m]。トラップと違い trapMaxBallSpeed の速度制限を待たない。
+     */
+    interceptDistance: number;
+    /** 軌跡ちょうど上（距離0）にいるときのインターセプト成功確率上限。距離に応じて線形に0まで減衰する。 */
+    interceptChance: number;
     passDistance: number;
     shootDistance: number;
     shootProbability: number;

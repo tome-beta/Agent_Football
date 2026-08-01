@@ -1,5 +1,7 @@
-import type { Player, Ball, GameConfig } from "../types";
-import { distance, length } from "./utils";
+import type { Player, Ball, GameConfig, Vec2 } from "../types";
+import { distance, distanceToSegment, length } from "./utils";
+import { chance } from "./random";
+import type { RngHolder } from "./random";
 
 /**
  * 選手がボールを蹴れる距離にいるか（features_2 §4.1）。
@@ -54,11 +56,30 @@ export function resolvePlayerBall(player: Player, ball: Ball, config: GameConfig
  *   - 保持者がいる場合 … 相手チームの選手が奪取距離内にいれば奪う（features_2 §4.3）。
  *     複数いれば最も近い選手。奪取時はボール速度を0にし、lastKickerId は変えない
  *     （蹴っていないため）。奪われなければ保持者に追従させる。
+ *   - フリーボールで、直前のキッカーと別チームの選手が「このターンにボールが移動した
+ *     軌跡（`prevBallPos`→`ball.pos`の線分）」から interceptDistance 以内にいる場合 …
+ *     軌跡までの距離が近いほど高い確率でインターセプトする（`config.ai.interceptChance`
+ *     を上限に、距離に応じて線形に減衰）。ボールの速度に関わらず判定するため、トラップ
+ *     （下記）と違い trapMaxBallSpeed の速度制限を待たない。
+ *     単純にボールの「現在位置」への点距離で判定すると、1ターンあたりのボール移動距離
+ *     （dt×速度）に対して判定半径が大きくなった途端、軌跡上のほぼ全区間が捕捉範囲に
+ *     入ってしまい奪取回数が急増する非線形な閾値現象が起きる（2026-08-01 balance-check
+ *     で確認: interceptDistance 0.8→1.2 で20試合の奪取回数が324→2901に急増）。
+ *     軌跡＝線分への距離で判定することでこの標本化の粗さに依存する問題を避ける。
  *   - フリーボールの場合 … トラップできる選手のうち最も近い1人が保持する（§4.1）。
  *
  * 保持者が players に含まれていない想定外の状態では、フリーボールに戻して復帰させる。
+ *
+ * @param prevBallPos このターンの `stepBall` 呼び出し前のボール位置（軌跡の始点）。
+ * @param rng 確率判定用の乱数状態（`GameState` を渡せばよい。`rngSeed` を持つオブジェクトなら何でも可）。
  */
-export function resolveBallPossession(players: Player[], ball: Ball, config: GameConfig): void {
+export function resolveBallPossession(
+  players: Player[],
+  ball: Ball,
+  config: GameConfig,
+  prevBallPos: Vec2,
+  rng: RngHolder
+): void {
   if (ball.status === "OutOfBounds") return;
 
   const possessor =
@@ -87,6 +108,35 @@ export function resolveBallPossession(players: Player[], ball: Ball, config: Gam
     ball.pos = { ...stealer.pos };
     ball.vel = { x: 0, y: 0 };
     return;
+  }
+
+  // インターセプト: パス/シュートで飛んでいる最中のボールの軌跡に、蹴った選手と別チームの
+  // 選手が interceptDistance 以内まで近づいていれば、距離に応じた確率で奪う。
+  if (ball.lastKickerId !== null) {
+    const kicker = players.find((p) => p.id === ball.lastKickerId);
+    if (kicker !== undefined) {
+      let interceptor: Player | undefined;
+      let bestDist = Infinity;
+      for (const p of players) {
+        if (p.team === kicker.team) continue;
+        const d = distanceToSegment(p.pos, prevBallPos, ball.pos);
+        if (d <= config.ai.interceptDistance && d < bestDist) {
+          bestDist = d;
+          interceptor = p;
+        }
+      }
+
+      if (interceptor !== undefined) {
+        const proximity = 1 - bestDist / config.ai.interceptDistance;
+        if (chance(rng, config.ai.interceptChance * proximity)) {
+          ball.status = "Possessed";
+          ball.possessorId = interceptor.id;
+          ball.pos = { ...interceptor.pos };
+          ball.vel = { x: 0, y: 0 };
+          return;
+        }
+      }
+    }
   }
 
   // フリーボール: トラップ条件を満たす選手のうち最も近い1人が収める。

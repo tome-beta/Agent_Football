@@ -39,8 +39,9 @@ export class Simulator {
     if (ACTIVE_PHASES.includes(state.phase)) {
       for (const player of players) decideAction(player, state, config);
       for (const player of players) stepPlayer(player, config);
+      const prevBallPos = { ...state.ball.pos };
       stepBall(state.ball, config);
-      resolveBallPossession(players, state.ball, config);
+      resolveBallPossession(players, state.ball, config, prevBallPos, state);
     }
 
     const goalsBefore = state.scoreLog.length;

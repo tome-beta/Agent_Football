@@ -8,7 +8,8 @@ import {
 import { createBall } from "../../src/game/ball";
 import { createPlayer } from "../../src/game/player";
 import { loadConfig } from "../../src/simulation/config";
-import type { Ball, Player, Role, TeamSide, Vec2 } from "../../src/types";
+import type { Ball, GameConfig, Player, Role, TeamSide, Vec2 } from "../../src/types";
+import type { RngHolder } from "../../src/game/random";
 
 const config = loadConfig();
 
@@ -18,6 +19,25 @@ function playerAt(id: string, team: TeamSide, pos: Vec2, role: Role = "FW"): Pla
 
 function ballAt(pos: Vec2, vel: Vec2 = { x: 0, y: 0 }): Ball {
   return { ...createBall(), pos, vel };
+}
+
+function rng(seed = 1): RngHolder {
+  return { rngSeed: seed };
+}
+
+/**
+ * `resolveBallPossession` の簡易ラッパー。デフォルトではボールの軌跡（前フレーム位置）を
+ * 今の位置と同じ点として呼ぶ（＝旧シグネチャと同じ「点」判定になる）。インターセプトの
+ * 確率・軌跡をテストしたい場合だけ `opts` で上書きする。
+ */
+function resolve(
+  players: Player[],
+  ball: Ball,
+  opts: { prevBallPos?: Vec2; config?: GameConfig } = {}
+): void {
+  const cfg = opts.config ?? config;
+  const prevBallPos = opts.prevBallPos ?? ball.pos;
+  resolveBallPossession(players, ball, cfg, prevBallPos, rng());
 }
 
 describe("canKick", () => {
@@ -136,7 +156,7 @@ describe("resolveBallPossession", () => {
     const far = playerAt("B-DF", "B", { x: 1.5, y: 0 });
     const ball = ballAt({ x: 0, y: 0 });
 
-    resolveBallPossession([far, near], ball, config);
+    resolve([far, near], ball);
     expect(ball.possessorId).toBe("A-FW");
   });
 
@@ -144,7 +164,7 @@ describe("resolveBallPossession", () => {
     const player = playerAt("A-FW", "A", { x: 50, y: 50 });
     const ball = ballAt({ x: 0, y: 0 });
 
-    resolveBallPossession([player], ball, config);
+    resolve([player], ball);
     expect(ball.status).toBe("Free");
     expect(ball.possessorId).toBeNull();
   });
@@ -153,7 +173,7 @@ describe("resolveBallPossession", () => {
     const player = playerAt("A-FW", "A", { x: 0.1, y: 0 });
     const ball = ballAt({ x: 0, y: 0 }, { x: config.ai.trapMaxBallSpeed + 1, y: 0 });
 
-    resolveBallPossession([player], ball, config);
+    resolve([player], ball);
     expect(ball.status).toBe("Free");
   });
 
@@ -167,7 +187,7 @@ describe("resolveBallPossession", () => {
       lastKickerId: "A-FW",
     };
 
-    resolveBallPossession([holder, thief], ball, config);
+    resolve([holder, thief], ball);
     expect(ball.possessorId).toBe("B-DF");
     expect(ball.pos).toEqual(thief.pos);
     // 奪取ではボールを蹴っていないので lastKickerId は変わらない。
@@ -181,7 +201,7 @@ describe("resolveBallPossession", () => {
     const thief = playerAt("B-DF", "B", { x: config.ai.tackleDistance, y: 0 });
     const ball: Ball = { ...ballAt({ x: 0, y: 0 }), status: "Possessed", possessorId: "A-FW" };
 
-    resolveBallPossession([holder, thief], ball, config);
+    resolve([holder, thief], ball);
     expect(ball.possessorId).toBe("B-DF");
   });
 
@@ -190,7 +210,7 @@ describe("resolveBallPossession", () => {
     const thief = playerAt("B-DF", "B", { x: config.ai.tackleDistance + 0.01, y: 0 });
     const ball: Ball = { ...ballAt({ x: 0, y: 0 }), status: "Possessed", possessorId: "A-FW" };
 
-    resolveBallPossession([holder, thief], ball, config);
+    resolve([holder, thief], ball);
     expect(ball.possessorId).toBe("A-FW");
   });
 
@@ -199,7 +219,7 @@ describe("resolveBallPossession", () => {
     const mate = playerAt("A-MF", "A", { x: 0.05, y: 0 }, "MF");
     const ball: Ball = { ...ballAt({ x: 0, y: 0 }), status: "Possessed", possessorId: "A-FW" };
 
-    resolveBallPossession([holder, mate], ball, config);
+    resolve([holder, mate], ball);
     expect(ball.possessorId).toBe("A-FW");
   });
 
@@ -209,7 +229,7 @@ describe("resolveBallPossession", () => {
     const farThief = playerAt("B-MF", "B", { x: 0.8, y: 0 }, "MF");
     const ball: Ball = { ...ballAt({ x: 0, y: 0 }), status: "Possessed", possessorId: "A-FW" };
 
-    resolveBallPossession([holder, farThief, nearThief], ball, config);
+    resolve([holder, farThief, nearThief], ball);
     expect(ball.possessorId).toBe("B-DF");
   });
 
@@ -218,7 +238,7 @@ describe("resolveBallPossession", () => {
     holder.vel = { x: 1, y: 0 };
     const ball: Ball = { ...ballAt({ x: 0, y: 0 }), status: "Possessed", possessorId: "A-FW" };
 
-    resolveBallPossession([holder], ball, config);
+    resolve([holder], ball);
     expect(ball.pos).toEqual({ x: 7, y: 2 });
     expect(ball.vel).toEqual({ x: 1, y: 0 });
   });
@@ -227,7 +247,7 @@ describe("resolveBallPossession", () => {
     const player = playerAt("A-FW", "A", { x: 50, y: 50 });
     const ball: Ball = { ...ballAt({ x: 0, y: 0 }), status: "Possessed", possessorId: "ghost" };
 
-    resolveBallPossession([player], ball, config);
+    resolve([player], ball);
     expect(ball.status).toBe("Free");
     expect(ball.possessorId).toBeNull();
   });
@@ -236,9 +256,65 @@ describe("resolveBallPossession", () => {
     const player = playerAt("A-FW", "A", { x: 0, y: 0 });
     const ball: Ball = { ...ballAt({ x: 0, y: 0 }), status: "OutOfBounds" };
 
-    resolveBallPossession([player], ball, config);
+    resolve([player], ball);
     expect(ball.status).toBe("OutOfBounds");
     expect(ball.possessorId).toBeNull();
+  });
+
+  it("lets an opponent exactly on the ball's trajectory intercept a fast pass when interceptChance is 1", () => {
+    const kicker = playerAt("A-FW", "A", { x: -10, y: 0 });
+    // 軌跡（prevBallPos→ball.pos）ちょうど上（距離0）に置き、proximity=1にする。
+    const opponent = playerAt("B-DF", "B", { x: 0, y: 0 });
+    const ball: Ball = {
+      ...ballAt({ x: 0, y: 0 }, { x: config.ai.trapMaxBallSpeed + 5, y: 0 }),
+      lastKickerId: "A-FW",
+    };
+    const fullChanceConfig = loadConfig({ ai: { interceptChance: 1 } as GameConfig["ai"] });
+
+    resolve([kicker, opponent], ball, { prevBallPos: { x: 0, y: 0 }, config: fullChanceConfig });
+    expect(ball.status).toBe("Possessed");
+    expect(ball.possessorId).toBe("B-DF");
+    expect(ball.vel).toEqual({ x: 0, y: 0 });
+  });
+
+  it("does not let a team-mate of the kicker intercept a pass", () => {
+    const kicker = playerAt("A-FW", "A", { x: -10, y: 0 });
+    const teammate = playerAt("A-MF", "A", { x: 0, y: 0 }, "MF");
+    const ball: Ball = {
+      ...ballAt({ x: 0, y: 0 }, { x: config.ai.trapMaxBallSpeed + 5, y: 0 }),
+      lastKickerId: "A-FW",
+    };
+    const fullChanceConfig = loadConfig({ ai: { interceptChance: 1 } as GameConfig["ai"] });
+
+    resolve([kicker, teammate], ball, { prevBallPos: { x: 0, y: 0 }, config: fullChanceConfig });
+    expect(ball.status).toBe("Free");
+    expect(ball.possessorId).toBeNull();
+  });
+
+  it("does not intercept beyond interceptDistance even when interceptChance is 1", () => {
+    const kicker = playerAt("A-FW", "A", { x: -10, y: 0 });
+    const opponent = playerAt("B-DF", "B", { x: config.ai.interceptDistance + 0.01, y: 0 });
+    const ball: Ball = {
+      ...ballAt({ x: 0, y: 0 }, { x: config.ai.trapMaxBallSpeed + 5, y: 0 }),
+      lastKickerId: "A-FW",
+    };
+    const fullChanceConfig = loadConfig({ ai: { interceptChance: 1 } as GameConfig["ai"] });
+
+    resolve([kicker, opponent], ball, { prevBallPos: { x: 0, y: 0 }, config: fullChanceConfig });
+    expect(ball.status).toBe("Free");
+  });
+
+  it("never intercepts at the very edge of interceptDistance (proximity is 0)", () => {
+    const kicker = playerAt("A-FW", "A", { x: -10, y: 0 });
+    const opponent = playerAt("B-DF", "B", { x: config.ai.interceptDistance, y: 0 });
+    const ball: Ball = {
+      ...ballAt({ x: 0, y: 0 }, { x: config.ai.trapMaxBallSpeed + 5, y: 0 }),
+      lastKickerId: "A-FW",
+    };
+    const fullChanceConfig = loadConfig({ ai: { interceptChance: 1 } as GameConfig["ai"] });
+
+    resolve([kicker, opponent], ball, { prevBallPos: { x: 0, y: 0 }, config: fullChanceConfig });
+    expect(ball.status).toBe("Free");
   });
 
   it("is stable when called repeatedly with the same standoff", () => {
@@ -247,7 +323,7 @@ describe("resolveBallPossession", () => {
     const ball: Ball = { ...ballAt({ x: 0, y: 0 }), status: "Possessed", possessorId: "A-FW" };
 
     // 保持者が入れ替わり続ける（毎ターン奪い合う）のは許容だが、状態は壊れないこと。
-    for (let i = 0; i < 50; i++) resolveBallPossession([holder, thief], ball, config);
+    for (let i = 0; i < 50; i++) resolve([holder, thief], ball);
     expect(ball.status).toBe("Possessed");
     expect(["A-FW", "B-DF"]).toContain(ball.possessorId);
   });
