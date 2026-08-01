@@ -170,7 +170,38 @@ describe("decideAction: non-possessor", () => {
     expect(supporter.vel.y).toBeGreaterThan(0);
   });
 
-  it("tracks a free ball only if nearest, otherwise moves to formation", () => {
+  it("steers the receiving spot away from a marker sitting right on it, but ignores a distant one", () => {
+    const config = loadConfig({ random: { seed: 1 } });
+
+    function supporterVel(markerPos: { x: number; y: number }) {
+      const state = createInitialState(config);
+      const supporter = state.teams.A.players.find((p) => p.role === "MF")!;
+      const carrier = state.teams.A.players.find((p) => p.role === "FW")!;
+      state.ball.pos = { x: 0, y: 0 };
+      state.ball.status = "Possessed";
+      state.ball.possessorId = carrier.id;
+      supporter.pos = { x: -20, y: -20 };
+      // 敵は全員遠ざけたうえで、1人だけ狙った位置に置く。
+      for (const o of state.teams.B.players) o.pos = { x: 1000, y: 1000 };
+      state.teams.B.players[0].pos = markerPos;
+
+      decideAction(supporter, state, config);
+      return { ...supporter.vel };
+    }
+
+    const receivingDistance = config.ai.passDistance * 0.6;
+    // 候補地点のすぐ近く（真上だと引く方向が定まらないので少しずらす）に置く。
+    const onTargetSpot = supporterVel({ x: 0.5, y: receivingDistance });
+    const farAway = supporterVel({ x: 1000, y: 1000 });
+
+    // 受け手候補地点の真上にいる敵は回避対象になり、狙いが変わるはず。
+    expect(onTargetSpot).not.toEqual(farAway);
+  });
+
+  it("tracks a free ball only if nearest, otherwise moves toward a supportive position (not literal home)", () => {
+    // 回帰テスト: 以前は非最寄りの選手が formationPos ぴったりへ戻っていた。
+    // パス/シュート後にボールが誰にも保持されていない時間は長く続くため、その都度
+    // 定位置へ引き戻されると「受けるための動き」が起きる前に消えてしまう。
     const config = loadConfig({ random: { seed: 1 } });
     const state = createInitialState(config);
     const near = state.teams.A.players.find((p) => p.role === "FW")!;
@@ -184,6 +215,8 @@ describe("decideAction: non-possessor", () => {
 
     expect(near.state).toBe("BallTracking");
     expect(far.state).toBe("MovingToSpace");
+    // チームAの攻撃方向は+y。定位置のままなら vel はほぼ0のはず。
+    expect(far.vel.y).toBeGreaterThan(0);
   });
 });
 

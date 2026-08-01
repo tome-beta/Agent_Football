@@ -76,8 +76,8 @@ function effectiveSpeed(player: Player, config: GameConfig): number {
   return Math.min(player.params.speed, config.player.maxSpeed);
 }
 
-/** 選手の現在の向き。動いていれば進行方向、静止時は攻撃方向を向く。 */
-function facingDirection(player: Player): Vec2 {
+/** 選手の現在の向き。動いていれば進行方向、静止時は攻撃方向を向く。デバッグ描画（視野範囲の表示）でも使う。 */
+export function facingDirection(player: Player): Vec2 {
   if (length(player.vel) > 1e-6) return player.vel;
   return { x: 0, y: player.team === "A" ? 1 : -1 };
 }
@@ -219,21 +219,58 @@ function decideDefensiveAction(player: Player, state: GameState, config: GameCon
   moveToward(player, markPos, config);
 }
 
+/** candidates の中から point に最も近い選手の位置を返す。 */
+function nearestPosTo(point: Vec2, candidates: Player[]): Vec2 | undefined {
+  let nearest: Vec2 | undefined;
+  let nearestDist = Infinity;
+  for (const c of candidates) {
+    const d = distance(point, c.pos);
+    if (d < nearestDist) {
+      nearestDist = d;
+      nearest = c.pos;
+    }
+  }
+  return nearest;
+}
+
 /**
- * 味方がボールを持っている間の受け手ポジショニング（features_1 §4.1）。
+ * ボール保持者が味方かフリーボールかに関わらず、非保持の選手が目指す
+ * 「パスを受けられそうなポジション」を返す（features_1 §4.1）。定位置そのまま
+ * だと「受けるための動き」に見えないため、次の3つを組み合わせて決める:
  *
- * 定位置からボール方向に少し寄るだけでは「パスを受けるための動き」に見えないため、
- * 攻撃ゴール方向へのランも同時に加える。ボールに寄りすぎるとキャリアーと重なって
- * パスコースを塞いでしまうので、ボール寄せは軽め・ゴール方向への前進は強めにする。
+ *   1. 基準点: ボールから攻撃ゴール方向へ `passDistance` の6割ほど進んだ地点
+ *      （パスが届く距離を保ちつつ前進する）
+ *   2. 最も近い敵から離れる方向へ少しずらす（マークを外して「空く」）
+ *   3. 定位置の x（自分のレーン）へ半分寄せる（味方同士が同じ場所に集まらないようにする）
  */
-function decideSupportAction(player: Player, state: GameState, config: GameConfig): void {
-  player.state = "MovingToSpace";
+function supportPosition(player: Player, state: GameState, config: GameConfig): Vec2 {
   const home = formationPos(player.team, player.role, config);
   const goal = attackGoal(player.team, config);
+  const oppTeam = state.teams[opposite(player.team)];
+  const ballPos = state.ball.pos;
 
-  const towardBall = scale(sub(state.ball.pos, home), 0.2);
-  const towardGoal = scale(sub(goal, home), 0.3);
-  moveToward(player, add(home, add(towardBall, towardGoal)), config);
+  const towardGoalDir = normalize(sub(goal, ballPos));
+  const receivingDistance = config.ai.passDistance * 0.6;
+  const base = length(towardGoalDir) < 1e-6 ? home : add(ballPos, scale(towardGoalDir, receivingDistance));
+
+  // 近くに敵がいるときだけ回避する（遠い敵に対してまで毎回3mずらすと無意味に揺れる）。
+  const markerRange = config.ai.passDistance * 0.5;
+  const marker = nearestPosTo(base, oppTeam.players);
+  let openSpot = base;
+  if (marker !== undefined && distance(base, marker) < markerRange) {
+    const awayFromMarker = sub(base, marker);
+    if (length(awayFromMarker) > 1e-6) {
+      openSpot = add(base, scale(normalize(awayFromMarker), 3));
+    }
+  }
+
+  return { x: (openSpot.x + home.x) / 2, y: openSpot.y };
+}
+
+/** 味方がボールを持っている間の受け手ポジショニング。 */
+function decideSupportAction(player: Player, state: GameState, config: GameConfig): void {
+  player.state = "MovingToSpace";
+  moveToward(player, supportPosition(player, state, config), config);
 }
 
 function decideFreeBallAction(player: Player, state: GameState, config: GameConfig): void {
@@ -254,8 +291,11 @@ function decideFreeBallAction(player: Player, state: GameState, config: GameConf
     player.state = "BallTracking";
     moveToward(player, ball.pos, config);
   } else {
+    // フリーボールでも定位置ぴったりへは戻さない。パス/シュートの直後は誰も保持していない
+    // 時間が長く続くため、ここが素の formationPos だと味方の大半が毎回そこへ引き戻されて
+    // しまい、「受けるための動き」が起きる前に消えてしまっていた。
     player.state = "MovingToSpace";
-    moveToward(player, formationPos(player.team, player.role, config), config);
+    moveToward(player, supportPosition(player, state, config), config);
   }
 }
 
@@ -266,7 +306,7 @@ function decideFreeBallAction(player: Player, state: GameState, config: GameConf
  *   - 自分が保持中 … シュート/パス/ドリブル判定（decidePossessionAction）
  *   - 敵が保持中 … 最も近い敵をマーク（decideDefensiveAction）
  *   - 味方が保持中 … スペースへ移動して受け手候補になる（decideSupportAction）
- *   - フリーボール … 最も近い味方だけが追いかけ、他はフォーメーション位置へ（decideFreeBallAction）
+ *   - フリーボール … 最も近い味方だけが追いかけ、他は受け手ポジションへ（decideFreeBallAction）
  *
  * ここでは state と vel だけを更新する。実際の位置更新は stepPlayer が行う。
  */
