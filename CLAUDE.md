@@ -1,6 +1,8 @@
 # CLAUDE.md
 
 このファイルは、このリポジトリで作業する Claude Code (claude.ai/code) に向けたガイダンスです。
+受け答えはすべて日本語が基本です。
+
 
 ## プロジェクト概要
 
@@ -53,7 +55,7 @@ types (src/types.ts)
 - **時間は秒で扱う**。1ターン = `config.physics.dt` 秒（デフォルト 0.1）。位置更新は `pos += vel * dt`、摩擦は `vel *= friction^dt`（`config.ball.friction` は**毎秒の**速度保持率）。
 - **座標系**: 原点はピッチ中央、x = タッチライン方向、y = ゴールライン方向。**チームA は y = -length/2 のゴールを守り（攻撃方向 +y）、チームB はその逆**。`Pitch.isInGoalA()` は「チームAのゴールに入った」＝**チームBの得点**である点に注意。
 - **スコアは `scoreLog` が単一の情報源**。別カウンタを持たず `currentScore(state)` で集計する。
-- **ボールの保持者調停は `resolveBallPossession(players, ball, config)`**（毎ターン1回、選手の移動後）。`resolvePlayerBall` は選手1人分（トラップと追従）しか見ず、奪取と最近接ルールは扱わない。
+- **ボールの保持者調停は `resolveBallPossession(players, ball, config, prevBallPos, rng)`**（毎ターン1回、選手の移動後）。`resolvePlayerBall` は選手1人分（トラップと追従）しか見ず、奪取・インターセプト・最近接ルールは扱わない。`prevBallPos` は当ターンの `stepBall` 呼び出し前のボール位置（パスのインターセプト判定で軌跡＝線分として使う）、`rng` は確率判定用（`GameState` を渡す）。
 - **Node 側から `NullRenderer` を使うときは `src/renderer/nullRenderer` を直接 import** する（`src/renderer/index.ts` 経由だと DOM 依存の `CanvasRenderer` を巻き込む）。
 
 ## スキル
