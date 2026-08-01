@@ -106,6 +106,7 @@
 - [x] `index.html` に試合開始ボタンを追加（シミュレーション開始/一時停止トリガー） — 一時停止/再開トグルボタンと再スタートボタンを実装。`requestAnimationFrame` の連鎖は止めず `running` フラグで `step()` 呼び出しだけを止める設計（連鎖を都度張り直す実装はタイミング問題があり不採用）
 - [x] `index.html` に選手パラメータ設定UI（`PlayerParams` の speed / passAccuracy / shootPower / vision / aggressiveness をスライダー等で調整）を追加 — 役割別（FW/MF/DF）スライダー。再スタートボタンで反映した `GameConfig` から新しい `Simulator` を生成する
 - [x] リアルタイムで試合を閲覧できることを確認（**MVP v0.2**） — `npm run dev` でブラウザ上で試合が自動再生されることを確認済み
+- [x] 表示サイズの調整（2026-08-01、視認性向上のためユーザー依頼） — `CanvasRenderer` の `SCALE`（8→11px/m）でピッチ全体を拡大し、選手マーカー（`PLAYER_MARKER_SCALE=2`）・ボール（`BALL_MARKER_SCALE=2`、最小半径6px）を実際の物理サイズより大きく描画するよう変更（当たり判定の半径自体は変更なし）
 
 ### マイルストーンG: テスト・調整 ✅ 完了
 - [x] 各モジュールのユニットテスト（ボール物理・当たり判定・ゴール判定・AI） — 既存118件（`tests/game/*`・`tests/simulation/*`）で網羅済みと確認
@@ -123,6 +124,22 @@
 - [x] `decideDefensiveAction` / `decideSupportAction` / `supportPosition` / `decideFreeBallAction` の非追従分岐を、共通関数 `computeTargetPosition(player, state, config)` に統合（呼び出し元は `player.state` の名乗り分けだけ残す） `player` — 敵保持中は ballAttraction+coverBias+pressure、非敵保持中は従来の受け手ポジション計算を内部分岐し、teammateRepulsion は共通適用
 - [x] ヘッドレス実行で挙動を確認 — `npm run headless` 相当のコマンドが例外なく `MATCH_END` まで到達（Team A 6 - 4 Team B）。既存の `decideAction` 系テスト12件は無改修のまま全通過（力の合成後も観測可能な挙動が保たれていることを確認）
 - [x] 力の合成ロジックのユニットテストを追加 `tests/game/player.test.ts` — 「味方が近すぎると反発が働く」「aggressivenessが高いほど強く詰め寄る」「coverBiasでボール-自ゴール線に寄る」の3件を追加
+
+#### 追加調整（2026-08-01、実試合を見ての改善）
+
+- [x] **複数人で囲む動きがない問題を解消** — 従来は複数の守備者が同じ相手ボール保持者へ同じ方向（自ゴール寄り）から近づくため、囲むのではなく団子状に重なっていた。`computeApproachPoint`（`src/game/player.ts`）を追加し、`pressDistance` 以内にいる味方を id 順に並べて円周上のスロットに割り当て、各人が異なる角度（半径 `positioning.surroundRadius`、既定2.5m）から接近するようにした
+- [x] **プレス判断の確率化（意思決定のばらつき）** — 「同じ場面でも選手の判断が毎回変わって見える」ようにするため、pressure（詰め寄り）を無条件実行から `chance()` ベースの確率判定に変更。確率は `positioning.pressChanceBase`/`pressChanceSpread` と `player.params.aggressiveness` から決まり、役割による分岐は書かず aggressiveness の値だけで傾向が変わる（`specification/開発メモ.md` の設計原則に沿う）
+- [x] **マジックナンバーの解消** — `player.ts` にハードコードされていた `moveToward` の停止距離(0.1m)・パス初速の距離係数(0.3)・マーク判定距離の倍率(2倍)・受け手ポジションの距離係数(0.6)・マーカー回避判定範囲の係数(0.5)・回避時の横ずれ距離(3m) を `GameConfig.ai`/`ai.positioning` の新規キー（`moveStopThreshold`/`passSpeedDistanceFactor`/`markedRadiusFactor`/`receivingDistanceFactor`/`markerAvoidRangeFactor`/`markerAvoidStepDistance`）に切り出した。数値は変更前と同じなので挙動は変わらない
+- [x] balance-check（20シード）で確認 — クラッシュ・NaNなし。プレス確率化後は18勝1敗1分（調整前は16勝1敗3分）で、既存の「キックオフ側優位」傾向から大きく外れていないことを確認
+
+#### パス/ドリブル確率化と、そこから発覚した「パスがノーリスク」問題（2026-08-01）
+
+- [x] **パス/ドリブル選択の確率化** — 受け手がいても `aggressiveness`/`vision` に応じた確率であえてドリブルを続けるようにした（`GameConfig.ai.dribbleChanceBase`/`dribbleChanceAggroSpread`/`dribbleChanceVisionSpread`、`decidePossessionAction`）。`aggressiveness` が高いほどドリブルを選びやすく、`vision` が広いほど受け手を見つけやすくパスを選びやすい。これまで描画デバッグにしか使われていなかった `vision` パラメータに初めて意思決定上の意味を持たせた
+- [x] **根本原因の調査** — 計測用スクリプトで「パス/ドリブル/シュート回数」と「奪取（steal）回数」を20試合分計測した結果、**ドリブル確率化前は奪取が0回**（純パスは相手の届かない距離を一瞬で飛ぶため守備側が事実上手を出せない）と判明。ドリブル確率化を入れた途端に奪取69回・総得点ほぼ半減・勝敗分布が大幅に均衡（18/1/1→8/4/8）した。つまり **「パスはノーリスク、ドリブルだけハイリスク」という非対称性**がこれまでの偏りの根本原因だった
+- [x] **パスのインターセプト判定を追加** — `resolveBallPossession`（`src/game/collision.ts`）に、フリーボール（パス/シュートで飛行中）を蹴った選手と別チームの選手が奪える処理を追加。トラップと違い `trapMaxBallSpeed` の速度制限を待たない
+- [x] **点距離判定での閾値爆発を発見・回避** — 最初はボールの「現在位置」への点距離で判定していたところ、`interceptDistance` を0.8→1.2に上げただけで20試合の奪取回数が324→2901に急増する強い非線形性を発見（1ターンあたりのボール移動距離に対して判定半径が大きくなった途端、軌跡上のほぼ全区間が捕捉範囲に入ってしまうため）。判定を「このターンのボール移動軌跡（前フレーム位置→現在位置の線分）」への距離に変更し、かつ距離に応じた確率化（`GameConfig.ai.interceptChance`、軌跡上で最大・`interceptDistance`で0まで線形減衰）にすることでこの閾値現象を解消した。`resolveBallPossession` のシグネチャに `prevBallPos`/`rng` 引数を追加（呼び出し元は `Simulator.step` のみ）
+- [x] パラメータ探索 — `interceptDistance=1.5` 固定で `interceptChance` を0.2/0.4/0.7/1.0で比較し、0.2が最も互角（20試合で勝敗8/6/6、総得点50-50）だったためデフォルト採用。0.4以上は守備側が有利になりすぎる
+- [x] テスト追加 — `tests/game/collision.test.ts` にインターセプト成立/不成立/味方除外/距離境界のケースを追加（全122件）、typecheck・headless実行で確認
 
 ---
 

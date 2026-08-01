@@ -95,9 +95,10 @@ simulation (types + game + renderer 依存)
 │ 3. stepBall(ball, config)                            │
 │      位置更新 → 摩擦 → 速度上限 → 停止閾値          │
 │    ↓                                                 │
-│ 4. resolveBallPossession(players, ball, config)      │
+│ 4. resolveBallPossession(players, ball, config,      │
+│                          prevBallPos, state)         │
 │      全選手を見て保持者を決める（トラップ・奪取・    │
-│      保持中の追従）                                  │
+│      インターセプト・保持中の追従）                  │
 │    ↓                                                 │
 │ 5. stepMatch(state, config)                          │
 │      ゴール／アウト判定、フェーズ遷移、ターン加算    │

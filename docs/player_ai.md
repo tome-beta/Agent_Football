@@ -37,8 +37,8 @@
 2. **パス判定**（シュートが成立しなかった場合）
    - `selectPassReceiver` で受け手を選ぶ:
      - 候補: 同チームの他選手のうち、距離が `passDistance`（既定15m）以内の全員（**視野角によるフィルタはしない** — キャリアーは周囲を見渡せる想定のため）。
-     - スコアリング: 相手選手が `tackleDistance × 2` 以内にいる候補は大きく減点（-1000）、それ以外はゴールに近いほど高評価。最もスコアの高い候補を選ぶ。
-   - 受け手がいれば: `state = "Passing"`、方向は受け手へ向けて `applyAimError`（`passAccuracy` が低いほどブレる）、初速は `passSpeed + 距離×0.3`（遠いほど強く蹴る、`ball.maxSpeed` で頭打ち）。
+     - スコアリング: 相手選手が `tackleDistance × markedRadiusFactor`（既定2倍）以内にいる候補は大きく減点（-1000）、それ以外はゴールに近いほど高評価。最もスコアの高い候補を選ぶ。
+   - 受け手がいれば: `state = "Passing"`、方向は受け手へ向けて `applyAimError`（`passAccuracy` が低いほどブレる）、初速は `passSpeed + 距離×passSpeedDistanceFactor`（既定0.3、遠いほど強く蹴る、`ball.maxSpeed` で頭打ち）。
 
 3. **ドリブル継続**（シュートもパスも成立しなかった場合）
    - `state = "Possession"` のまま、ゴール方向へ `moveToward`。ボールは保持者に追従するので、これがそのまま「ドリブル」になる。
@@ -57,14 +57,16 @@
 
 1. **ballAttraction**: `home` からボール方向へ、`distance(home, ownGoal) × ballPullWeight`（既定0.5）を上限に追従する。`home` が自ゴールから遠い（＝FW寄りの）選手ほど大きく前に出て、DF寄りの選手はあまり動かない——役割分岐なしに間合いの違いが出る。
 2. **coverBias**: 現在の目標位置を、ボールと自ゴールを結ぶ線上へ `coverWeight`（既定1、フルスナップ）の比率で吸着させる。
-3. **pressure**: `pressDistance`（既定20m）以内に敵ボール保持者がいれば、`pressWeight × player.params.aggressiveness` の比率でその選手へ詰め寄る。
+3. **pressure**（2026-08-01 拡張）: `pressDistance`（既定20m）以内に敵ボール保持者がいる場合、まず「実際に詰め寄るか」を毎ターン確率で判定する。確率は `pressChanceBase + (aggressiveness - 0.5) × pressChanceSpread`（既定値では aggressiveness=0.5 で50%、aggressiveness=0.85 なら85%）。`chance()` で成立した場合のみ、`pressWeight × player.params.aggressiveness` の比率で目標を `computeApproachPoint` の返す点へ寄せる。役割ではなく `aggressiveness` の値そのものが確率に反映されるため、同じ場面でも選手ごとに反応が変わって見える。
+
+**囲む動き（`computeApproachPoint`）**: 単純に敵保持者の座標へ寄せると、複数の味方が同時にプレスした際に全員が同じ方向（自ゴール寄り）から近づき、囲む形にならず団子状に重なってしまう。これを避けるため、`pressDistance` 以内にいる味方（自分を含む）を id 順に並べて円周上のスロットに等間隔で割り当て、各人が敵保持者を中心とした異なる角度（半径 `surroundRadius`、既定2.5m）から接近する目標点を計算する。プレスしている味方が1人以下なら単純に敵保持者の座標を返す。
 
 ### 3.2 敵がボールを持っていない場合（味方保持 or フリーボール、`decideSupportAction`/`decideFreeBallAction` から呼ばれる）
 
 旧 `supportPosition` と同じ「受け手ポジション」計算:
 
-1. **基準点**: ボールの現在位置から攻撃ゴール方向へ `passDistance × 0.6`（既定9m）進んだ地点。パスが届く距離を保ちつつ前進する。
-2. **マーク回避**: 基準点から `passDistance × 0.5`（既定7.5m）以内に敵がいれば、その敵から離れる方向へ3mずらす。遠い敵には反応しない。
+1. **基準点**: ボールの現在位置から攻撃ゴール方向へ `passDistance × receivingDistanceFactor`（既定0.6＝9m）進んだ地点。パスが届く距離を保ちつつ前進する。
+2. **マーク回避**: 基準点から `passDistance × markerAvoidRangeFactor`（既定0.5＝7.5m）以内に敵がいれば、その敵から離れる方向へ `markerAvoidStepDistance`（既定3m）ずらす。遠い敵には反応しない。
 3. **レーン維持**: 最終的な x 座標は、上記の x と**自分の定位置の x** を平均した値にする。y はそのまま。
 
 ### 3.3 共通の後処理：teammateRepulsion
@@ -91,9 +93,10 @@
 | `effectiveSpeed` | `min(player.params.speed, config.player.maxSpeed)`。役割別速度と全体上限の小さい方 |
 | `facingDirection` | 選手の「向き」。動いていれば直近の速度方向、静止時は攻撃方向。デバッグ描画（視野コーン表示）でも使用 |
 | `applyAimError` | キック方向に、精度パラメータ（0で最大 `aimErrorMaxDeg`、1で誤差0）に応じた角度誤差を乗せる |
-| `moveToward` | 目標地点へ `effectiveSpeed` で向かう `vel` を設定。目標まで0.1m未満なら停止 |
+| `moveToward` | 目標地点へ `effectiveSpeed` で向かう `vel` を設定。目標まで `moveStopThreshold`（既定0.1m）未満なら停止 |
 | `nearestPosTo` | 任意の点から見て最も近い選手の座標を返す。`computeTargetPosition`（3.2 分岐）のマーク回避に使用 |
 | `computeTargetPosition` | 非保持時の目標位置を力の合成で決める（本章の主題） |
+| `computeApproachPoint` | 複数人でプレスする際、敵保持者を中心とした円周上の異なる角度から接近する目標点を計算する（3.1 のpressure、2026-08-01 導入） |
 
 `isVisible`（視野角チェック）と `nearestOpponent`（視野内最近接の敵選手）はマイルストーンHで削除した。前者はマーク対象選定にのみ使われていたが、マーク自体が coverBias ベースに変わったため不要になった。パス受け手選定（`selectPassReceiver`）はもともと視野角を見ない設計なので影響なし。
 
@@ -104,5 +107,5 @@
 - シュートの角度判定・GKの遮蔽（`features_1` §3.2 は必須としているが未実装）
 - スタミナ・ドリブル能力・トラップ精度などの技術/メンタルパラメータ（`features_1` は「第一ステップは簡易でよい」としている項目、そもそも未導入）
 - オフサイド判定（`features_1` §4.1 に記載があるが、`TODO.md` で明示的に第一ステップ対象外）
-- パス/マークの意思決定に確率的なブレはない（成功判定・キック誤差は確率的だが、「誰にパスするか」自体は決定的なスコアリングで一意に決まる。「誰をマークするか」という概念自体は coverBias 化でなくなった）
+- パスの受け手選定に確率的なブレはない（成功判定・キック誤差は確率的だが、「誰にパスするか」自体は決定的なスコアリングで一意に決まる）。一方でプレス判定（3.1 の pressure）は `pressChanceBase`/`pressChanceSpread` により `aggressiveness` に応じた確率で毎ターン揺らぐようになった（2026-08-01）。「誰をマークするか」という概念自体は coverBias 化でなくなった
 - `computeTargetPosition` の力の合成は簡易な逐次ブレンドであり、物理的な力の重ね合わせ（ベクトル加算）ではない箇所がある（coverBias・pressure は「現在target→目標点」への線形補間）。挙動のチューニングは `config.ai.positioning` の重みで行う（`docs/api.md` §2 参照）

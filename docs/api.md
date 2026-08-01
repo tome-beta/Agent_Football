@@ -106,8 +106,8 @@ interface MatchResult { scoreA: number; scoreB: number; winner: TeamSide | "Draw
 | `pitch` | `width` / `length` / `goalWidth` | ピッチ幅・長さ・ゴール総幅 [m]（判定は `abs(x) <= goalWidth/2`） |
 | `player` | `maxSpeed` / `radius` | 選手の速度上限・半径 |
 | `ball` | `radius` / `friction` / `stopThreshold` / `maxSpeed` | `friction` は**毎秒の速度保持率**。適用は `friction^dt` |
-| `ai` | `ballControlDistance` / `trapDistance` / `trapMaxBallSpeed` / `tackleDistance` / `passDistance` / `shootDistance` / `shootProbability` / `visionDistance` / `passSpeed` / `shootSpeed` / `aimErrorMaxDeg` / `positioning` | 各種判定距離・確率。`visionDistance` は選手が味方/敵/ボールを認識できる距離（視野角は `PlayerParams.vision`）、`passSpeed`/`shootSpeed` はキックの基準初速、`aimErrorMaxDeg` は `passAccuracy`/`shootPower` が0のときの最大キック角度誤差、`positioning` は非保持時の力の合成モデルの重み（下記） |
-| `ai.positioning` | `ballPullWeight` / `repulsionWeight` / `minSpacing` / `coverWeight` / `pressWeight` / `pressDistance` | `computeTargetPosition`（`src/game/player.ts`、マイルストーンH）が使う重み。`ballPullWeight` は home からボールへ追従する上限距離の係数（`distance(home, ownGoal)` に掛ける）、`repulsionWeight`/`minSpacing` は味方同士が近すぎるときの反発、`coverWeight` はボール-自ゴール線への吸着ブレンド率、`pressWeight`/`pressDistance` は敵ボール保持者への詰め寄り（`aggressiveness` と掛け合わせる） |
+| `ai` | `ballControlDistance` / `trapDistance` / `trapMaxBallSpeed` / `tackleDistance` / `passDistance` / `shootDistance` / `shootProbability` / `visionDistance` / `passSpeed` / `shootSpeed` / `aimErrorMaxDeg` / `moveStopThreshold` / `passSpeedDistanceFactor` / `markedRadiusFactor` / `positioning` | 各種判定距離・確率。`visionDistance` は選手が味方/敵/ボールを認識できる距離（視野角は `PlayerParams.vision`）、`passSpeed`/`shootSpeed` はキックの基準初速、`aimErrorMaxDeg` は `passAccuracy`/`shootPower` が0のときの最大キック角度誤差、`moveStopThreshold` は `moveToward` の到達判定距離、`passSpeedDistanceFactor` はパス距離1mあたりの初速上乗せ量、`markedRadiusFactor` はパス候補のマーク済み判定距離（`tackleDistance` の倍率）、`positioning` は非保持時の力の合成モデルの重み（下記） |
+| `ai.positioning` | `ballPullWeight` / `repulsionWeight` / `minSpacing` / `coverWeight` / `pressWeight` / `pressDistance` / `surroundRadius` / `pressChanceBase` / `pressChanceSpread` / `receivingDistanceFactor` / `markerAvoidRangeFactor` / `markerAvoidStepDistance` | `computeTargetPosition`（`src/game/player.ts`、マイルストーンH）が使う重み。`ballPullWeight` は home からボールへ追従する上限距離の係数（`distance(home, ownGoal)` に掛ける）、`repulsionWeight`/`minSpacing` は味方同士が近すぎるときの反発、`coverWeight` はボール-自ゴール線への吸着ブレンド率、`pressWeight`/`pressDistance` は敵ボール保持者への詰め寄り（`aggressiveness` と掛け合わせる）。`surroundRadius` は複数人でプレスする際に敵保持者を囲むリングの半径（`computeApproachPoint`）、`pressChanceBase`/`pressChanceSpread` は毎ターン実際に詰め寄るかどうかを `aggressiveness` に応じた確率で決めるための基準値と振れ幅、`receivingDistanceFactor`/`markerAvoidRangeFactor`/`markerAvoidStepDistance` は非保持時の受け手ポジション計算（ボールから攻撃ゴール方向への距離・敵マーカー回避判定範囲・回避時の横ずれ距離） |
 | `team` | `roleParams` / `formation` / `tactics` / `names` | 役割別パラメータ・定位置・戦術・チーム名 |
 | `match` | `turnsPerHalf` / `goalScoredTurns` / `restartSetupTurns` / `kickoffTurns` | ハーフのターン数と各フェーズの滞在ターン数 |
 | `physics` | `dt` | 1ターンの秒数 |
@@ -203,7 +203,7 @@ function chance(holder: RngHolder, p: number): boolean;               // 確率 
 |---|---|---|
 | `canKick` | `(player, ball, config) => boolean` | 実装済み。`ai.ballControlDistance` 以内か |
 | `resolvePlayerBall` | `(player, ball, config) => boolean` | 実装済み。解決後にこの選手が保持しているかを返す |
-| `resolveBallPossession` | `(players: Player[], ball, config) => void` | 実装済み。全選手を見て保持者を決める |
+| `resolveBallPossession` | `(players: Player[], ball, config, prevBallPos: Vec2, rng: RngHolder) => void` | 実装済み。全選手を見て保持者を決める。`prevBallPos` はこのターンの `stepBall` 呼び出し前のボール位置（インターセプト判定の軌跡の始点）、`rng` は確率判定用（`GameState` を渡せばよい） |
 | `resolvePlayerPlayer` | `(a, b, config) => void` | 実装済み（**意図的に no-op**。第一ステップでは選手同士は通り抜ける） |
 
 ### 責務の分け方
@@ -216,12 +216,15 @@ function chance(holder: RngHolder, p: number): boolean;               // 確率 
 
 **奪取をここで扱わないのは意図的です。** 味方から奪ってはいけないので保持者のチームを知る必要がありますが、`Ball` は `possessorId` しか持たないため単独では判定できません。同じ理由で「複数選手が範囲内なら最も近い選手が保持」（features_2 §4.1）も1人分の情報では表現できません。
 
-そこで全体の調停は `resolveBallPossession(players, ball, config)` が担当します。毎ターン1回、選手の移動後に呼びます。
+そこで全体の調停は `resolveBallPossession(players, ball, config, prevBallPos, rng)` が担当します。毎ターン1回、選手の移動後に呼びます（`Simulator.step` は `stepBall` 呼び出し前のボール位置を `prevBallPos` として渡す）。
 
 - 保持者がいる → 相手チームで `ai.tackleDistance` 以内の選手のうち**最も近い1人**が奪う。奪取時は `vel = 0` にし、**`lastKickerId` は変えない**（蹴っていないため）。奪う者がいなければ保持者に追従させる
-- フリーボール → トラップ条件を満たす選手のうち最も近い1人が保持する
+- フリーボールで `lastKickerId` があり、蹴った選手と別チームの選手が「このターンにボールが移動した軌跡（`prevBallPos`→`ball.pos` の線分）」から `ai.interceptDistance` 以内にいる → 軌跡までの距離が近いほど高い確率（`ai.interceptChance` を上限に線形減衰）でインターセプトする（2026-08-01 導入）。トラップと違い `trapMaxBallSpeed` を待たない
+- フリーボール（インターセプトが起きなかった場合）→ トラップ条件を満たす選手のうち最も近い1人が保持する
 - `possessorId` が `players` に見つからない場合はフリーボールに戻して復帰させる
 - `OutOfBounds` のときは何もしない
+
+**なぜ点ではなく線分で判定するか**: 単純にボールの「現在位置」への点距離で判定すると、1ターンあたりのボール移動距離（`dt`×速度）に対して判定半径が大きくなった途端、軌跡上のほぼ全区間が捕捉範囲に入ってしまい奪取回数が急増する非線形な閾値現象が起きる（balance-checkで確認: 点距離判定だと `interceptDistance` 0.8→1.2 で20試合の奪取回数が324→2901に急増）。軌跡＝線分への距離で判定し、かつ確率化することでこの標本化の粗さに依存する不安定さを避けている。
 
 ---
 
@@ -281,5 +284,6 @@ interface Renderer {
 
 - `NullRenderer` — 全メソッド no-op。ヘッドレス実行・テスト用。**Node 側からは `src/renderer/nullRenderer` を直接 import すること**（`src/renderer/index.ts` 経由だと DOM 依存の `CanvasRenderer` を巻き込む）。
 - `CanvasRenderer` — 実装済み。ピッチ（緑地・白線・センターサークル・両ゴール黄色ハイライト）・選手（チーム色の円＋役割ラベル）・ボール（白丸）・HUD（スコア/ターン/フェーズ/前後半のテキスト）を描画する。
-  - `init()` が `canvas.width`/`canvas.height` を `config.pitch.length * SCALE` / `config.pitch.width * SCALE`（`SCALE = 8` px/m）に設定する。**呼び出し側が必ず `init()` を呼ぶこと**（`Simulator.run()` は呼ぶが、独自ループを組む場合は呼び忘れに注意 — `src/main.ts` は過去にこれを忘れて発覚した経緯がある）。
-  - 座標変換（`toCanvas`）はゲーム座標の x/y を入れ替えて描画する。ゲームロジック側の座標系（y=ゴールライン方向）は変えず、**表示だけ横向き（ゴールが左右）にする**ための処理。`index.html` の `<canvas>` は 600×400（75m×50m × 8px/m）。
+  - `init()` が `canvas.width`/`canvas.height` を `config.pitch.length * SCALE` / `config.pitch.width * SCALE`（`SCALE = 11` px/m）に設定する。**呼び出し側が必ず `init()` を呼ぶこと**（`Simulator.run()` は呼ぶが、独自ループを組む場合は呼び忘れに注意 — `src/main.ts` は過去にこれを忘れて発覚した経緯がある）。`index.html` の `<canvas width="600" height="400">` は初期値の目安に過ぎず、実際のサイズは `init()` が上書きする（75m×50m × 11px/m ≈ 825×550）。
+  - 座標変換（`toCanvas`）はゲーム座標の x/y を入れ替えて描画する。ゲームロジック側の座標系（y=ゴールライン方向）は変えず、**表示だけ横向き（ゴールが左右）にする**ための処理。
+  - 選手マーカー・ボールは視認性のため、実際の物理半径（`config.player.radius`/`config.ball.radius`）より大きく描画する（`PLAYER_MARKER_SCALE`/`BALL_MARKER_SCALE` = 2倍、ボールは最小半径6pxも保証）。当たり判定の半径自体は変えていない。
