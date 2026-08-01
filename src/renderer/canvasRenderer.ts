@@ -2,8 +2,15 @@ import type { Renderer, GameConfig, Player, Ball, GameState, Vec2 } from "../typ
 import { currentScore } from "../game/match";
 import { facingDirection } from "../game/player";
 
-/** 論理サイズ(m)をピクセルへ変換する係数。index.html の canvas サイズ(600x400)と対応する。 */
-const SCALE = 8;
+/** 論理サイズ(m)をピクセルへ変換する係数。index.html の canvas サイズ(600x400)は初期値の目安で、実際は init() が上書きする。 */
+const SCALE = 11;
+
+/** 選手マーカーは視認性のため、実際の衝突判定半径より大きく描画する。 */
+const PLAYER_MARKER_SCALE = 2;
+
+/** ボールも同様に、実際の半径より大きく描画する（最小ピクセル数も合わせて引き上げる）。 */
+const BALL_MARKER_SCALE = 2;
+const BALL_MIN_RADIUS_PX = 6;
 
 const TEAM_COLOR: Record<"A" | "B", string> = {
   A: "#2196f3",
@@ -95,7 +102,7 @@ export class CanvasRenderer implements Renderer {
   /** 選手をチーム色の円で描画し、円の上に役割（FW/MF/DF）をラベル表示する。`setDebugVision(true)` 中は視野範囲も重ね描きする。 */
   drawPlayers(players: Player[]): void {
     const { ctx } = this;
-    const radiusPx = this.config.player.radius * SCALE;
+    const radiusPx = this.config.player.radius * SCALE * PLAYER_MARKER_SCALE;
 
     if (this.debugVision) {
       for (const player of players) this.drawVisionCone(player);
@@ -141,11 +148,11 @@ export class CanvasRenderer implements Renderer {
     ctx.stroke();
   }
 
-  /** ボールを白丸で描画する。半径は物理サイズ(m)基準だが、小さすぎて見えなくならないよう最小3pxを保証する。 */
+  /** ボールを白丸で描画する。半径は物理サイズ(m)基準だが、小さすぎて見えなくならないよう最小ピクセル数を保証する。 */
   drawBall(ball: Ball): void {
     const { ctx } = this;
     const pos = this.toCanvas(ball.pos);
-    const radiusPx = Math.max(3, this.config.ball.radius * SCALE);
+    const radiusPx = Math.max(BALL_MIN_RADIUS_PX, this.config.ball.radius * SCALE * BALL_MARKER_SCALE);
 
     ctx.beginPath();
     ctx.fillStyle = "#ffffff";
