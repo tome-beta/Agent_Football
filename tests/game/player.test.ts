@@ -220,6 +220,77 @@ describe("decideAction: non-possessor", () => {
   });
 });
 
+describe("decideAction: positioning force composition (milestone H)", () => {
+  it("repels a defender away from a teammate standing right on top of them", () => {
+    // teammateRepulsion: minSpacing 未満に味方がいると離れる方向の力が働く。
+    const config = loadConfig({ random: { seed: 1 } });
+    const state = createInitialState(config);
+    const defender = state.teams.A.players.find((p) => p.role === "DF")!;
+    const crowder = state.teams.A.players.find((p) => p.role === "MF")!;
+    const opponent = state.teams.B.players.find((p) => p.role === "FW")!;
+
+    defender.pos = { x: 0, y: -30 };
+    crowder.pos = { x: 0.5, y: -30 }; // minSpacing(6m) よりずっと近い
+    opponent.pos = { x: 0, y: 1000 }; // 自ゴールの正面(x=0)の延長線上遠くに置き、x方向の力を反発だけにする
+    state.ball.pos = { ...opponent.pos };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = opponent.id;
+
+    decideAction(defender, state, config);
+
+    // crowder は defender の +x 側にいるので、反発力は -x 方向に働くはず。
+    expect(defender.vel.x).toBeLessThan(0);
+  });
+
+  it("presses harder toward the opponent ball carrier when aggressiveness is higher", () => {
+    const config = loadConfig({ random: { seed: 1 } });
+
+    function markingTargetDistanceAfterStep(aggressiveness: number): number {
+      const state = createInitialState(config);
+      const defender = state.teams.A.players.find((p) => p.role === "DF")!;
+      const opponent = state.teams.B.players.find((p) => p.role === "FW")!;
+      for (const p of state.teams.A.players) if (p.id !== defender.id) p.pos = { x: 1000, y: 1000 };
+
+      defender.params = { ...defender.params, aggressiveness };
+      defender.pos = { x: 5, y: -10 };
+      opponent.pos = { x: 5, y: -5 };
+      state.ball.pos = { ...opponent.pos };
+      state.ball.status = "Possessed";
+      state.ball.possessorId = opponent.id;
+
+      decideAction(defender, state, config);
+      stepPlayer(defender, config);
+      return Math.hypot(defender.pos.x - opponent.pos.x, defender.pos.y - opponent.pos.y);
+    }
+
+    const lowPress = markingTargetDistanceAfterStep(0.1);
+    const highPress = markingTargetDistanceAfterStep(1.0);
+
+    // aggressiveness が高いほど、詰め寄る力が強く敵に近づくはず。
+    expect(highPress).toBeLessThan(lowPress);
+  });
+
+  it("keeps a marker anchored on the ball-ownGoal line rather than drifting off it", () => {
+    // coverBias: ボールが自ゴールの正面(x=0)にある限り、マーカーの目標もx=0付近に留まる。
+    const config = loadConfig({ random: { seed: 1 } });
+    const state = createInitialState(config);
+    const defender = state.teams.A.players.find((p) => p.role === "DF")!;
+    const opponent = state.teams.B.players.find((p) => p.role === "FW")!;
+    for (const p of state.teams.A.players) if (p.id !== defender.id) p.pos = { x: 1000, y: 1000 };
+
+    defender.pos = { x: 15, y: -10 }; // ゴール正面の線から大きく外れた位置からスタート
+    opponent.pos = { x: 0, y: -5 };
+    state.ball.pos = { ...opponent.pos };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = opponent.id;
+
+    decideAction(defender, state, config);
+
+    // ボール-自ゴール線(x=0)へ寄る力が働くので、x方向の速度は負(=0へ近づく方向)のはず。
+    expect(defender.vel.x).toBeLessThan(0);
+  });
+});
+
 describe("stepPlayer", () => {
   it("moves the player by vel * dt and mutates in place", () => {
     const config = loadConfig();

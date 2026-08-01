@@ -1,5 +1,5 @@
 import type { Player, PlayerParams, Role, Team, TeamSide, Vec2, GameState, GameConfig } from "../types";
-import { add, sub, scale, length, normalize, distance } from "./utils";
+import { add, sub, scale, length, normalize, distance, clampMagnitude } from "./utils";
 import { kickBall } from "./ball";
 import { nextRandomRange, chance } from "./random";
 
@@ -82,22 +82,6 @@ export function facingDirection(player: Player): Vec2 {
   return { x: 0, y: player.team === "A" ? 1 : -1 };
 }
 
-/** targetPos が player の視野（距離 × 視野角）内にあるか。 */
-function isVisible(player: Player, targetPos: Vec2, config: GameConfig): boolean {
-  const toTarget = sub(targetPos, player.pos);
-  const dist = length(toTarget);
-  if (dist > config.ai.visionDistance) return false;
-  if (dist < 1e-6) return true;
-
-  const facing = normalize(facingDirection(player));
-  if (length(facing) < 1e-6) return true;
-
-  const cosAngle = (facing.x * toTarget.x + facing.y * toTarget.y) / dist;
-  const clamped = Math.max(-1, Math.min(1, cosAngle));
-  const angleDeg = (Math.acos(clamped) * 180) / Math.PI;
-  return angleDeg <= player.params.vision / 2;
-}
-
 /** キック方向に、精度パラメータ（0〜1、低いほどブレ大）に応じた角度誤差を加える。 */
 function applyAimError(dir: Vec2, accuracy: number, state: GameState, config: GameConfig): Vec2 {
   const maxOffsetDeg = config.ai.aimErrorMaxDeg * (1 - Math.max(0, Math.min(1, accuracy)));
@@ -117,21 +101,6 @@ function moveToward(player: Player, target: Vec2, config: GameConfig): void {
     return;
   }
   player.vel = scale(normalize(toTarget), effectiveSpeed(player, config));
-}
-
-function nearestOpponent(player: Player, oppTeam: Team, config: GameConfig): Player | undefined {
-  const visible = oppTeam.players.filter((o) => isVisible(player, o.pos, config));
-  const candidates = visible.length > 0 ? visible : oppTeam.players;
-  let nearest: Player | undefined;
-  let nearestDist = Infinity;
-  for (const o of candidates) {
-    const d = distance(player.pos, o.pos);
-    if (d < nearestDist) {
-      nearestDist = d;
-      nearest = o;
-    }
-  }
-  return nearest;
 }
 
 /**
@@ -205,20 +174,6 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
   moveToward(player, goal, config);
 }
 
-function decideDefensiveAction(player: Player, state: GameState, config: GameConfig): void {
-  const oppTeam = state.teams[opposite(player.team)];
-  const target = nearestOpponent(player, oppTeam, config);
-  const anchor = target !== undefined ? target.pos : formationPos(player.team, player.role, config);
-
-  player.state = "Marking";
-  const own = ownGoal(player.team, config);
-  const toOwn = sub(own, anchor);
-  // tackleDistance より内側に寄せないと、狙い通りの位置に到達しても奪取判定に絶対届かない。
-  const offset = Math.min(config.ai.tackleDistance * 0.5, length(toOwn));
-  const markPos = length(toOwn) < 1e-6 ? anchor : add(anchor, scale(normalize(toOwn), offset));
-  moveToward(player, markPos, config);
-}
-
 /** candidates の中から point に最も近い選手の位置を返す。 */
 function nearestPosTo(point: Vec2, candidates: Player[]): Vec2 | undefined {
   let nearest: Vec2 | undefined;
@@ -234,43 +189,91 @@ function nearestPosTo(point: Vec2, candidates: Player[]): Vec2 | undefined {
 }
 
 /**
- * ボール保持者が味方かフリーボールかに関わらず、非保持の選手が目指す
- * 「パスを受けられそうなポジション」を返す（features_1 §4.1）。定位置そのまま
- * だと「受けるための動き」に見えないため、次の3つを組み合わせて決める:
+ * 非保持の選手が目指す目標位置を、複数の「力」を合成して決める（マイルストーンH）。
+ * 役割（FW/MF/DF）による分岐は書かず、`homePos`/`params` の違いが結果ににじみ出るようにする。
  *
- *   1. 基準点: ボールから攻撃ゴール方向へ `passDistance` の6割ほど進んだ地点
- *      （パスが届く距離を保ちつつ前進する）
- *   2. 最も近い敵から離れる方向へ少しずらす（マークを外して「空く」）
- *   3. 定位置の x（自分のレーン）へ半分寄せる（味方同士が同じ場所に集まらないようにする）
+ * 敵がボールを持っている場合:
+ *   1. ballAttraction: home からボール方向へ、distance(home, ownGoal) * ballPullWeight を
+ *      上限に追従する（home が自ゴールから遠い＝FW寄りの選手ほど大きく前に出る）
+ *   2. coverBias: ボール-自ゴール間の線上へ coverWeight の比率で吸着する
+ *   3. pressure: pressDistance 以内の敵ボール保持者へ、aggressiveness に応じて詰め寄る
+ *
+ * 敵がボールを持っていない場合（味方保持 or フリーボール）:
+ *   ボールから攻撃ゴール方向へ passDistance の6割ほど進んだ「受け手ポジション」を狙い、
+ *   近くの敵マーカーから離れる方向へずらす（features_1 §4.1）。
+ *
+ * 最後に、味方が minSpacing 未満に近づいていれば離れる方向へ補正する（teammateRepulsion）。
  */
-function supportPosition(player: Player, state: GameState, config: GameConfig): Vec2 {
+function computeTargetPosition(player: Player, state: GameState, config: GameConfig): Vec2 {
   const home = formationPos(player.team, player.role, config);
-  const goal = attackGoal(player.team, config);
+  const own = ownGoal(player.team, config);
+  const { ball } = state;
+  const p = config.ai.positioning;
+  const myTeam = state.teams[player.team];
   const oppTeam = state.teams[opposite(player.team)];
-  const ballPos = state.ball.pos;
+  const carrier = ball.possessorId !== null ? oppTeam.players.find((o) => o.id === ball.possessorId) : undefined;
 
-  const towardGoalDir = normalize(sub(goal, ballPos));
-  const receivingDistance = config.ai.passDistance * 0.6;
-  const base = length(towardGoalDir) < 1e-6 ? home : add(ballPos, scale(towardGoalDir, receivingDistance));
+  let target: Vec2;
+  if (carrier !== undefined) {
+    const idealFollowDist = distance(home, own) * p.ballPullWeight;
+    target = add(home, clampMagnitude(sub(ball.pos, home), idealFollowDist));
 
-  // 近くに敵がいるときだけ回避する（遠い敵に対してまで毎回3mずらすと無意味に揺れる）。
-  const markerRange = config.ai.passDistance * 0.5;
-  const marker = nearestPosTo(base, oppTeam.players);
-  let openSpot = base;
-  if (marker !== undefined && distance(base, marker) < markerRange) {
-    const awayFromMarker = sub(base, marker);
-    if (length(awayFromMarker) > 1e-6) {
-      openSpot = add(base, scale(normalize(awayFromMarker), 3));
+    const lineVec = sub(ball.pos, own);
+    const lineLenSq = lineVec.x * lineVec.x + lineVec.y * lineVec.y;
+    if (lineLenSq > 1e-6) {
+      const t = Math.max(0, Math.min(1, ((target.x - own.x) * lineVec.x + (target.y - own.y) * lineVec.y) / lineLenSq));
+      const projected = add(own, scale(lineVec, t));
+      target = add(target, scale(sub(projected, target), p.coverWeight));
+    }
+
+    const dCarrier = distance(player.pos, carrier.pos);
+    if (dCarrier <= p.pressDistance) {
+      const strength = p.pressWeight * player.params.aggressiveness;
+      target = add(target, scale(sub(carrier.pos, target), strength));
+    }
+  } else {
+    const goal = attackGoal(player.team, config);
+    const towardGoalDir = normalize(sub(goal, ball.pos));
+    const receivingDistance = config.ai.passDistance * 0.6;
+    const base = length(towardGoalDir) < 1e-6 ? home : add(ball.pos, scale(towardGoalDir, receivingDistance));
+
+    // 近くに敵がいるときだけ回避する（遠い敵に対してまで毎回3mずらすと無意味に揺れる）。
+    const markerRange = config.ai.passDistance * 0.5;
+    const marker = nearestPosTo(base, oppTeam.players);
+    let openSpot = base;
+    if (marker !== undefined && distance(base, marker) < markerRange) {
+      const awayFromMarker = sub(base, marker);
+      if (length(awayFromMarker) > 1e-6) {
+        openSpot = add(base, scale(normalize(awayFromMarker), 3));
+      }
+    }
+    target = { x: (openSpot.x + home.x) / 2, y: openSpot.y };
+  }
+
+  for (const mate of myTeam.players) {
+    if (mate.id === player.id) continue;
+    const d = distance(player.pos, mate.pos);
+    if (d < p.minSpacing) {
+      const away = sub(player.pos, mate.pos);
+      if (length(away) > 1e-6) {
+        const strength = ((p.minSpacing - d) / p.minSpacing) * p.repulsionWeight;
+        target = add(target, scale(normalize(away), strength));
+      }
     }
   }
 
-  return { x: (openSpot.x + home.x) / 2, y: openSpot.y };
+  return target;
+}
+
+function decideDefensiveAction(player: Player, state: GameState, config: GameConfig): void {
+  player.state = "Marking";
+  moveToward(player, computeTargetPosition(player, state, config), config);
 }
 
 /** 味方がボールを持っている間の受け手ポジショニング。 */
 function decideSupportAction(player: Player, state: GameState, config: GameConfig): void {
   player.state = "MovingToSpace";
-  moveToward(player, supportPosition(player, state, config), config);
+  moveToward(player, computeTargetPosition(player, state, config), config);
 }
 
 function decideFreeBallAction(player: Player, state: GameState, config: GameConfig): void {
@@ -295,7 +298,7 @@ function decideFreeBallAction(player: Player, state: GameState, config: GameConf
     // 時間が長く続くため、ここが素の formationPos だと味方の大半が毎回そこへ引き戻されて
     // しまい、「受けるための動き」が起きる前に消えてしまっていた。
     player.state = "MovingToSpace";
-    moveToward(player, supportPosition(player, state, config), config);
+    moveToward(player, computeTargetPosition(player, state, config), config);
   }
 }
 

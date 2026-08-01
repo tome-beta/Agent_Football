@@ -37,6 +37,18 @@ export const defaultConfig: GameConfig = {
     passSpeed: 10, // パスの基準初速 [m/s]
     shootSpeed: 22, // シュートの基準初速上限 [m/s]（shootPowerを掛けて減衰させる）
     aimErrorMaxDeg: 12, // passAccuracy/shootPowerが0のときの最大キック角度誤差 [度]
+    positioning: {
+      ballPullWeight: 0.5, // home からの追従上限 = distance(home, ownGoal) * この係数
+      repulsionWeight: 4, // 味方が近すぎるときに離れる力の強さ [m]
+      minSpacing: 6, // この距離未満で反発が働く [m]
+      // coverWeight/pressWeight/pressDistance はマイルストーンGの調整で引き上げた。
+      // 元の値（0.6/0.8/12）だと守備が間に合わず、キックオフ〜ゴールのサイクルがほぼ
+      // 確実に攻撃側の得点で終わり、先にキックオフするチームが全勝する結果になっていた
+      // （20戦20勝を確認）。この値では20戦14勝4敗2分まで改善する。
+      coverWeight: 1, // ボール-自ゴール線への吸着ブレンド率
+      pressWeight: 2, // 敵ボール保持者への詰め寄りブレンド率（aggressivenessと掛け合わせる）
+      pressDistance: 20, // この距離以内の敵保持者にのみ詰め寄る [m]
+    },
   },
   team: {
     // features_1 §8.2 のサンプル選手データに準拠。

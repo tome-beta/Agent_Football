@@ -139,6 +139,21 @@ export interface GameConfig {
     shootSpeed: number;
     /** passAccuracy/shootPower が 0 のときの最大キック角度誤差 [度]。1 のとき誤差0。 */
     aimErrorMaxDeg: number;
+    /** 非保持時のポジショニングを力の合成で決めるための重み（マイルストーンH）。 */
+    positioning: {
+      /** ボールを追う度合い。home からの追従距離の上限は distance(home, ownGoal) * この係数。 */
+      ballPullWeight: number;
+      /** 味方が近づきすぎたときに離れる力の強さ [m]。 */
+      repulsionWeight: number;
+      /** この距離未満に味方がいると反発が働く [m]。 */
+      minSpacing: number;
+      /** ボール-自ゴール間の線上に吸着する強さ（0〜1のブレンド率）。 */
+      coverWeight: number;
+      /** 敵ボール保持者へ詰め寄る強さ（0〜1のブレンド率。aggressiveness と掛け合わせる）。 */
+      pressWeight: number;
+      /** この距離以内の敵ボール保持者にのみ詰め寄る [m]。 */
+      pressDistance: number;
+    };
   };
   team: {
     /** 役割ごとのデフォルト選手パラメータ。 */
