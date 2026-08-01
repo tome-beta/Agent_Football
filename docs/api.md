@@ -106,7 +106,8 @@ interface MatchResult { scoreA: number; scoreB: number; winner: TeamSide | "Draw
 | `pitch` | `width` / `length` / `goalWidth` | ピッチ幅・長さ・ゴール総幅 [m]（判定は `abs(x) <= goalWidth/2`） |
 | `player` | `maxSpeed` / `radius` | 選手の速度上限・半径 |
 | `ball` | `radius` / `friction` / `stopThreshold` / `maxSpeed` | `friction` は**毎秒の速度保持率**。適用は `friction^dt` |
-| `ai` | `ballControlDistance` / `trapDistance` / `trapMaxBallSpeed` / `tackleDistance` / `passDistance` / `shootDistance` / `shootProbability` / `visionDistance` / `passSpeed` / `shootSpeed` / `aimErrorMaxDeg` | 各種判定距離・確率。`visionDistance` は選手が味方/敵/ボールを認識できる距離（視野角は `PlayerParams.vision`）、`passSpeed`/`shootSpeed` はキックの基準初速、`aimErrorMaxDeg` は `passAccuracy`/`shootPower` が0のときの最大キック角度誤差 |
+| `ai` | `ballControlDistance` / `trapDistance` / `trapMaxBallSpeed` / `tackleDistance` / `passDistance` / `shootDistance` / `shootProbability` / `visionDistance` / `passSpeed` / `shootSpeed` / `aimErrorMaxDeg` / `positioning` | 各種判定距離・確率。`visionDistance` は選手が味方/敵/ボールを認識できる距離（視野角は `PlayerParams.vision`）、`passSpeed`/`shootSpeed` はキックの基準初速、`aimErrorMaxDeg` は `passAccuracy`/`shootPower` が0のときの最大キック角度誤差、`positioning` は非保持時の力の合成モデルの重み（下記） |
+| `ai.positioning` | `ballPullWeight` / `repulsionWeight` / `minSpacing` / `coverWeight` / `pressWeight` / `pressDistance` | `computeTargetPosition`（`src/game/player.ts`、マイルストーンH）が使う重み。`ballPullWeight` は home からボールへ追従する上限距離の係数（`distance(home, ownGoal)` に掛ける）、`repulsionWeight`/`minSpacing` は味方同士が近すぎるときの反発、`coverWeight` はボール-自ゴール線への吸着ブレンド率、`pressWeight`/`pressDistance` は敵ボール保持者への詰め寄り（`aggressiveness` と掛け合わせる） |
 | `team` | `roleParams` / `formation` / `tactics` / `names` | 役割別パラメータ・定位置・戦術・チーム名 |
 | `match` | `turnsPerHalf` / `goalScoredTurns` / `restartSetupTurns` / `kickoffTurns` | ハーフのターン数と各フェーズの滞在ターン数 |
 | `physics` | `dt` | 1ターンの秒数 |
@@ -191,7 +192,7 @@ function chance(holder: RngHolder, p: number): boolean;               // 確率 
 | `createPlayer` | `(id, team, role, params, homePos) => Player` | 実装済み。`pos` は `homePos` のコピー |
 | `formationPos` | `(side: TeamSide, role: Role, config: GameConfig) => Vec2` | 実装済み。比率→実座標 |
 | `createTeam` | `(side: TeamSide, config: GameConfig) => Team` | 実装済み。FW/MF/DF 各1人を定位置に配置 |
-| `decideAction` | `(player, state, config) => void` | 実装済み。ボール保持状況で4分岐し `player.state` と `player.vel` を更新する（保持中はシュート/パス/ドリブル判定、敵保持中はマーク、味方保持中はスペース移動、フリーボールは最近接選手のみ追跡） |
+| `decideAction` | `(player, state, config) => void` | 実装済み。ボール保持状況で4分岐し `player.state` と `player.vel` を更新する（保持中はシュート/パス/ドリブル判定、それ以外は非保持時共通の `computeTargetPosition`（マイルストーンH）が目標位置を決め、`state` ラベルだけ「Marking」「MovingToSpace」「BallTracking」を分岐先で使い分ける） |
 | `stepPlayer` | `(player, config) => void` | 実装済み。`decideAction` が設定した `vel` に従って `pos += vel * dt` し、ピッチ範囲内にクランプする |
 
 ---

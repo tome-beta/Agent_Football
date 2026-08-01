@@ -107,10 +107,22 @@
 - [x] `index.html` に選手パラメータ設定UI（`PlayerParams` の speed / passAccuracy / shootPower / vision / aggressiveness をスライダー等で調整）を追加 — 役割別（FW/MF/DF）スライダー。再スタートボタンで反映した `GameConfig` から新しい `Simulator` を生成する
 - [x] リアルタイムで試合を閲覧できることを確認（**MVP v0.2**） — `npm run dev` でブラウザ上で試合が自動再生されることを確認済み
 
-### マイルストーンG: テスト・調整
-- [ ] 各モジュールのユニットテスト（ボール物理・当たり判定・ゴール判定・AI）
-- [ ] パラメータ調整（設定ファイル経由で速度・摩擦・パス/シュート判定距離などを調整）
-- [ ] 複数試合連続実行の安定性確認・毎回異なる展開になるか（**Release v1.0**）
+### マイルストーンG: テスト・調整 ✅ 完了
+- [x] 各モジュールのユニットテスト（ボール物理・当たり判定・ゴール判定・AI） — 既存118件（`tests/game/*`・`tests/simulation/*`）で網羅済みと確認
+- [x] パラメータ調整（設定ファイル経由で速度・摩擦・パス/シュート判定距離などを調整） `config` — 下記の安定性確認で「キックオフ側がほぼ確実に得点する」問題を発見し、`GameConfig.ai.positioning` の `coverWeight`（0.6→1）/`pressWeight`（0.8→2）/`pressDistance`（12→20）を引き上げて対処。`src/config/default.ts` にコメントで根拠を明記
+- [x] 複数試合連続実行の安定性確認・毎回異なる展開になるか（**Release v1.0**） — 20シード連続実行で例外・NaN・無限ループなしを確認。ただし調整前は**A/B/引き分け = 20/0/0（キックオフ側が全勝、ほぼ交互に規則的なタイミングで得点）**という強い偏りを発見。原因はキックオフ権を持つ側の攻撃をほぼ止められない守備の弱さと判明（キックオフ側をBに強制しても同様にB全勝することで確認）。上記のパラメータ調整により **14/4/2** まで改善（先攻側にわずかな有利が残るのは実際のサッカーのキックオフ権と同程度で許容範囲と判断）
+
+### マイルストーンH: ポジショニング刷新（力の合成モデル）✅ 完了
+
+2026-08-01 の設計議論より。現状の非保持時ポジショニング（`decideDefensiveAction` が単純に「最も近い敵」をマークする）は、3人全員が同じ相手（大抵ボール保持者）に吸い寄せられ「団子状に集まる」挙動になりやすい。役割（FW/MF/DF）で分岐ロジックを書き分けるのではなく、**全選手が同じ力学式に自分の `homePos`/`params` を代入する**ことで結果的に役割らしさがにじみ出る設計に置き換える。詳細な力の定義は会話ログ参照、要点は以下。
+
+- [x] `GameConfig.ai` に `positioning`（`ballPullWeight` / `repulsionWeight` / `minSpacing` / `coverWeight` / `pressWeight` / `pressDistance`）を追加し `src/config/default.ts` にデフォルト値を設定する `config` — `src/types.ts` の `GameConfig.ai.positioning` と `src/config/default.ts` に追加
+- [x] Step 1: `teammateRepulsion`（味方同士が `minSpacing` 未満に近づくと反発する力）を既存の非保持ロジックに追加 `player` — `computeTargetPosition` の末尾で全ケース共通に適用
+- [x] Step 2: `decideDefensiveAction` の「最も近い敵をマーク」を撤去し、`coverBias`（ボール-自ゴール間の線上に、ボールへの近さに応じた強さで吸着する力）に置き換える `player` — `nearestOpponent` を削除し `computeTargetPosition` 内でボール-自ゴール線への射影ブレンドとして実装
+- [x] Step 3: `ballAttraction`（`home` からの理想距離を保ちつつボールに引かれる力。理想距離は `distance(home, ownGoal)` に比例）と `pressure`（敵ボール保持者への詰め寄り。強さは `player.params.aggressiveness` に比例）を追加 `player`
+- [x] `decideDefensiveAction` / `decideSupportAction` / `supportPosition` / `decideFreeBallAction` の非追従分岐を、共通関数 `computeTargetPosition(player, state, config)` に統合（呼び出し元は `player.state` の名乗り分けだけ残す） `player` — 敵保持中は ballAttraction+coverBias+pressure、非敵保持中は従来の受け手ポジション計算を内部分岐し、teammateRepulsion は共通適用
+- [x] ヘッドレス実行で挙動を確認 — `npm run headless` 相当のコマンドが例外なく `MATCH_END` まで到達（Team A 6 - 4 Team B）。既存の `decideAction` 系テスト12件は無改修のまま全通過（力の合成後も観測可能な挙動が保たれていることを確認）
+- [x] 力の合成ロジックのユニットテストを追加 `tests/game/player.test.ts` — 「味方が近すぎると反発が働く」「aggressivenessが高いほど強く詰め寄る」「coverBiasでボール-自ゴール線に寄る」の3件を追加
 
 ---
 

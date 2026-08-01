@@ -4,7 +4,7 @@
 
 ## プロジェクト概要
 
-TypeScript で実装する **3対3サッカー試合シミュレーション**（"Soccer Simulation - 3vs3" / `soccer-sim`）。カルチョビット風のパラメータ駆動・自律選手AIが特徴。現状は**マイルストーンB（ボール物理と当たり判定）まで完了**した段階です。型定義・設定・ピッチ・初期状態生成・決定的乱数・ボール物理（`stepBall` / `kickBall`）・当たり判定（`canKick` / `resolvePlayerBall` / `resolveBallPossession`）は実装済みですが、選手AI（`decideAction` / `stepPlayer`）、試合進行（`advancePhase` / `stepMatch`）、`Simulator` は未実装スタブ（`throw new Error("not implemented")`）です。次に着手するのは `TODO.md` のマイルストーンC（選手の自律行動AI）。
+TypeScript で実装する **3対3サッカー試合シミュレーション**（"Soccer Simulation - 3vs3" / `soccer-sim`）。カルチョビット風のパラメータ駆動・自律選手AIが特徴。現状は**マイルストーンF（Canvas 2D可視化）まで完了**した段階です（MVP v0.2）。型定義・設定・ピッチ・ボール物理・当たり判定・選手AI（`decideAction` / `stepPlayer`）・試合進行（`advancePhase` / `stepMatch`）・`Simulator`・`CanvasRenderer` はすべて実装済みで、`npm run headless` / `npm run dev` のいずれも動作します。次に着手するのは `TODO.md` のマイルストーンG（テスト・調整）およびH（ポジショニング刷新: 力の合成モデルによる非保持時の団子化解消）。
 
 開発は2段階で進めます：
 1. **第一段階（現在の主眼）**: 描画なし・Node ヘッドレスでのロジック実装 — 描画を一切介さずに1試合を正しくシミュレートできる状態を目指す。
@@ -62,4 +62,4 @@ types (src/types.ts)
 
 ## 設計仕様書
 
-`specification/features_1_player_ai.md` 〜 `features_4_tech_roadmap.md` および `specification/開発メモ.md` には、`TODO.md` の各マイルストーンの背景にある詳細な設計意図（選手AIの意思決定、ボール/ピッチ物理、試合ルール、技術ロードマップ）が書かれています。`TODO.md` のマイルストーンを実装する前にこれらを参照してください — コードや型定義には現れない「なぜそうするか」がここにあります。
+`specification/features_1_player_ai.md` 〜 `features_4_tech_roadmap.md` および `specification/開発メモ.md` には、`TODO.md` の各マイルストーンの背景にある詳細な設計意図（選手AIの意思決定、ボール/ピッチ物理、試合ルール、技術ロードマップ）が書かれています。`TODO.md` のマイルストーンを実装する前にこれらを参照してください — コードや型定義には現れない「なぜそうするか」がここにあります。`specification/カルチョビットmemo.md` には元ネタ「カルチョビット」のパラメータ仕様調査（キック/メンタル/スタミナ/フィジカル/スピード/テクニック/ジャンプ）と `PlayerParams` との対応関係をまとめてあり、Phase 2（スタミナ・対人接触）検討時の参考になります。

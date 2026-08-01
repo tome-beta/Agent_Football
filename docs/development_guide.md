@@ -33,7 +33,7 @@ npm run build       # tsc --noEmit && vite build
 
 ## 3. 実装の進め方
 
-`TODO.md` のマイルストーン順（A → B → C → D → E → F → G）に進める。着手前に対応する `specification/features_*.md` を読むこと。コードや型に現れない「なぜそうするか」がそこにある。
+`TODO.md` のマイルストーン順（A → B → C → D → E → F → G → H）に進める。**A〜H は完了済み**。着手前に対応する `specification/features_*.md` を読むこと。コードや型に現れない「なぜそうするか」がそこにある。次に着手するのは第二ステップ（`TODO.md` の「第二ステップ以降」）。
 
 各関数は `throw new Error("not implemented")` のスタブとして既に置かれている。**シグネチャを勝手に変えず、まず中身を埋める**。変更が必要なら `docs/api.md` も同時に更新する。
 

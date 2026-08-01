@@ -45,35 +45,42 @@
 
 ---
 
-## 3. 敵がボール保持中：`decideDefensiveAction`
+## 3〜5. 非保持時の共通ロジック：`computeTargetPosition`（マイルストーンH、2026-08-01 導入）
 
-- `nearestOpponent` で、視野内（`visionDistance` × `vision` 角度）の敵から最も近い1人を選ぶ。視野内に誰もいなければ視野を無視して全敵から最も近い1人を選ぶ（＝マーク対象が必ず1人は決まる）。
-- マーク位置は「対象の位置」そのものではなく、そこから**自ゴール方向へ `tackleDistance × 0.5`（既定0.5m）だけ寄せた点**。
-  - これは意図的な調整: 以前はもっと大きく（2m）ゴール側にオフセットしていたが、`tackleDistance`（奪取判定距離、既定1.0m）より遠いままだと、狙い通りの位置に到達しても**絶対に奪取判定に届かない**バグがあった（2026-07-30 に修正）。
-- `state = "Marking"`、そのマーク位置へ `moveToward`。
+以前は `decideDefensiveAction`（マーク）/ `decideSupportAction`（受け手）/ `decideFreeBallAction`（フリーボール）がそれぞれ役割別の分岐ロジックを個別に持っていたが、3人全員が同じ相手（大抵ボール保持者）に吸い寄せられ「団子状に集まる」挙動になりやすかった。現在はこの3つとも、非追従時の目標位置計算を共通関数 `computeTargetPosition(player, state, config)` に委譲し、呼び出し元は `player.state` のラベル分けだけを残している。役割（FW/MF/DF）による if 分岐は書かず、**全選手が同じ力学式に自分の `homePos`/`params` を代入する**ことで結果的に役割らしさがにじみ出る設計。
 
----
+`computeTargetPosition` は敵がボールを持っているかどうかで内部分岐する:
 
-## 4. 味方がボール保持中／5. フリーボール：`decideSupportAction` / `decideFreeBallAction`
+### 3.1 敵がボールを持っている場合（`decideDefensiveAction` から呼ばれる）
 
-両方とも同じ `supportPosition`（受け手ポジション計算）を使う。異なるのはフリーボール時の「自分が味方の中で最もボールに近いか」の分岐だけ。
+3つの力を順に合成する（`config.ai.positioning` の重みを使用）:
 
-### 5.1 フリーボール時の分岐（`decideFreeBallAction`）
-- 自チーム内でボールに最も近い選手を探す。
-- 自分がその最寄り選手 **かつ** ボールが `visionDistance` 以内 → `state = "BallTracking"`、ボールへ直進。
-- それ以外（最寄りでない、または視野外）→ `state = "MovingToSpace"`、`supportPosition` へ移動。
-  - 2026-08-01 に修正: 以前はここが定位置（`formationPos`）そのものだった。パス/シュート直後にボールが誰にも保持されていない時間は長く続くため、その都度定位置へ引き戻され「受けるための動き」が起きる前に消えてしまっていた。
+1. **ballAttraction**: `home` からボール方向へ、`distance(home, ownGoal) × ballPullWeight`（既定0.5）を上限に追従する。`home` が自ゴールから遠い（＝FW寄りの）選手ほど大きく前に出て、DF寄りの選手はあまり動かない——役割分岐なしに間合いの違いが出る。
+2. **coverBias**: 現在の目標位置を、ボールと自ゴールを結ぶ線上へ `coverWeight`（既定1、フルスナップ）の比率で吸着させる。
+3. **pressure**: `pressDistance`（既定20m）以内に敵ボール保持者がいれば、`pressWeight × player.params.aggressiveness` の比率でその選手へ詰め寄る。
 
-### 5.2 味方保持時（`decideSupportAction`）
-- 常に `state = "MovingToSpace"`、`supportPosition` へ移動（最寄り判定はしない＝ボール保持者以外の全員が対象）。
+### 3.2 敵がボールを持っていない場合（味方保持 or フリーボール、`decideSupportAction`/`decideFreeBallAction` から呼ばれる）
 
-### 5.3 `supportPosition` の計算（受けるためのポジション、2026-08-01 導入）
+旧 `supportPosition` と同じ「受け手ポジション」計算:
 
 1. **基準点**: ボールの現在位置から攻撃ゴール方向へ `passDistance × 0.6`（既定9m）進んだ地点。パスが届く距離を保ちつつ前進する。
-2. **マーク回避**: 基準点から `passDistance × 0.5`（既定7.5m）以内に敵がいれば、その敵から離れる方向へ3mずらす。遠い敵には反応しない（無関係な敵のたびに揺れないように距離で足切りしている）。
-3. **レーン維持**: 最終的な x 座標は、上記の x と**自分の定位置の x** を平均した値にする。y はそのまま。これにより FW/MF/DF が同じ地点に集まらず、役割ごとの横方向のレーンをある程度保つ。
+2. **マーク回避**: 基準点から `passDistance × 0.5`（既定7.5m）以内に敵がいれば、その敵から離れる方向へ3mずらす。遠い敵には反応しない。
+3. **レーン維持**: 最終的な x 座標は、上記の x と**自分の定位置の x** を平均した値にする。y はそのまま。
 
-この関数はボール保持者が味方かフリーボールかを区別しない（どちらの状況でも同じ「受けやすい場所」を目指す）。
+### 3.3 共通の後処理：teammateRepulsion
+
+どちらの分岐でも最後に、`minSpacing`（既定6m）未満に味方がいれば、その味方から離れる方向へ `repulsionWeight`（既定4）分だけ目標位置をずらす。これが「団子化」対策の core。
+
+### 3.4 各呼び出し元の役割
+
+| 呼び出し元 | `player.state` | 使う分岐 |
+|---|---|---|
+| `decideDefensiveAction`（敵保持中） | `"Marking"` | 3.1（敵がボールを持っている） |
+| `decideSupportAction`（味方保持中） | `"MovingToSpace"` | 3.2（受け手ポジション） |
+| `decideFreeBallAction`（フリーボール・自分が最寄りかつ視野内） | `"BallTracking"` | なし（ボールへ直進） |
+| `decideFreeBallAction`（フリーボール・それ以外） | `"MovingToSpace"` | 3.2（受け手ポジション） |
+
+`decideFreeBallAction` は自チーム内でボールに最も近い選手を探し、自分がその最寄り選手 **かつ** ボールが `visionDistance` 以内なら `"BallTracking"` でボールへ直進、それ以外は `computeTargetPosition` へ委譲する。パス/シュート直後にボールが誰にも保持されていない時間は長く続くため、最寄りでない選手を定位置（`formationPos`）そのままへ戻すと「受けるための動き」が起きる前に消えてしまう——これを避けるための設計（2026-08-01 導入、H以前から変更なし）。
 
 ---
 
@@ -82,12 +89,13 @@
 | 関数 | 役割 |
 |---|---|
 | `effectiveSpeed` | `min(player.params.speed, config.player.maxSpeed)`。役割別速度と全体上限の小さい方 |
-| `facingDirection` | 選手の「向き」。動いていれば直近の速度方向、静止時は攻撃方向 |
-| `isVisible` | 対象が「視野距離(`visionDistance`) × 視野角(`params.vision`)」内にあるか。**パス受け手選定・フリーボール追跡には使わない**（周囲を見渡せる想定）。**マーク対象の一次候補選定**にのみ使用 |
+| `facingDirection` | 選手の「向き」。動いていれば直近の速度方向、静止時は攻撃方向。デバッグ描画（視野コーン表示）でも使用 |
 | `applyAimError` | キック方向に、精度パラメータ（0で最大 `aimErrorMaxDeg`、1で誤差0）に応じた角度誤差を乗せる |
 | `moveToward` | 目標地点へ `effectiveSpeed` で向かう `vel` を設定。目標まで0.1m未満なら停止 |
-| `nearestOpponent` | 視野内（無ければ全体）から最も近い敵選手を返す。マーク対象選定に使用 |
-| `nearestPosTo` | 任意の点から見て最も近い選手の座標を返す。`supportPosition` のマーク回避に使用 |
+| `nearestPosTo` | 任意の点から見て最も近い選手の座標を返す。`computeTargetPosition`（3.2 分岐）のマーク回避に使用 |
+| `computeTargetPosition` | 非保持時の目標位置を力の合成で決める（本章の主題） |
+
+`isVisible`（視野角チェック）と `nearestOpponent`（視野内最近接の敵選手）はマイルストーンHで削除した。前者はマーク対象選定にのみ使われていたが、マーク自体が coverBias ベースに変わったため不要になった。パス受け手選定（`selectPassReceiver`）はもともと視野角を見ない設計なので影響なし。
 
 ---
 
@@ -96,4 +104,5 @@
 - シュートの角度判定・GKの遮蔽（`features_1` §3.2 は必須としているが未実装）
 - スタミナ・ドリブル能力・トラップ精度などの技術/メンタルパラメータ（`features_1` は「第一ステップは簡易でよい」としている項目、そもそも未導入）
 - オフサイド判定（`features_1` §4.1 に記載があるが、`TODO.md` で明示的に第一ステップ対象外）
-- パス/マークの意思決定に確率的なブレはない（成功判定・キック誤差は確率的だが、「誰をマークするか」「誰にパスするか」自体は決定的なスコアリングで一意に決まる）
+- パス/マークの意思決定に確率的なブレはない（成功判定・キック誤差は確率的だが、「誰にパスするか」自体は決定的なスコアリングで一意に決まる。「誰をマークするか」という概念自体は coverBias 化でなくなった）
+- `computeTargetPosition` の力の合成は簡易な逐次ブレンドであり、物理的な力の重ね合わせ（ベクトル加算）ではない箇所がある（coverBias・pressure は「現在target→目標点」への線形補間）。挙動のチューニングは `config.ai.positioning` の重みで行う（`docs/api.md` §2 参照）
