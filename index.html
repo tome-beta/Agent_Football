@@ -74,6 +74,14 @@
       margin-top: 10px;
       line-height: 1.4;
     }
+    #controls .debug-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border-top: 1px solid #eee;
+      padding-top: 8px;
+      margin-top: 8px;
+    }
   </style>
 </head>
 <body>
@@ -91,6 +99,10 @@
     <p class="hint">
       スライダーは役割(FW/MF/DF)ごとの選手パラメータ。変更は「再スタート」を押すまで反映されません（試合中の選手には即時反映しません）。
     </p>
+    <label class="debug-toggle">
+      <input type="checkbox" id="debugVisionToggle" />
+      選手の視野範囲を表示（デバッグ用）
+    </label>
   </div>
 
   <script type="module" src="/src/main.ts"></script>

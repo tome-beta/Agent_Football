@@ -1,5 +1,6 @@
 import type { Renderer, GameConfig, Player, Ball, GameState, Vec2 } from "../types";
 import { currentScore } from "../game/match";
+import { facingDirection } from "../game/player";
 
 /** 論理サイズ(m)をピクセルへ変換する係数。index.html の canvas サイズ(600x400)と対応する。 */
 const SCALE = 8;
@@ -13,6 +14,8 @@ export class CanvasRenderer implements Renderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private config: GameConfig;
+  /** true の間、選手ごとの視野範囲（距離×角度の扇形）を薄く重ね描きする（テスト・調整用）。 */
+  private debugVision = false;
 
   /** `canvas` から 2D コンテキストを取得して保持する。サイズ設定は `init()` が別途行う。 */
   constructor(canvas: HTMLCanvasElement, config: GameConfig) {
@@ -36,6 +39,11 @@ export class CanvasRenderer implements Renderer {
       x: this.canvas.width / 2 + pos.y * SCALE,
       y: this.canvas.height / 2 + pos.x * SCALE,
     };
+  }
+
+  /** 視野範囲のデバッグ表示をON/OFFする。`Renderer` インターフェースには含めない（`CanvasRenderer` 固有の機能）。 */
+  setDebugVision(enabled: boolean): void {
+    this.debugVision = enabled;
   }
 
   init(): void {
@@ -84,10 +92,14 @@ export class CanvasRenderer implements Renderer {
     }
   }
 
-  /** 選手をチーム色の円で描画し、円の上に役割（FW/MF/DF）をラベル表示する。 */
+  /** 選手をチーム色の円で描画し、円の上に役割（FW/MF/DF）をラベル表示する。`setDebugVision(true)` 中は視野範囲も重ね描きする。 */
   drawPlayers(players: Player[]): void {
     const { ctx } = this;
     const radiusPx = this.config.player.radius * SCALE;
+
+    if (this.debugVision) {
+      for (const player of players) this.drawVisionCone(player);
+    }
 
     for (const player of players) {
       const pos = this.toCanvas(player.pos);
@@ -102,6 +114,31 @@ export class CanvasRenderer implements Renderer {
       ctx.textAlign = "center";
       ctx.fillText(player.role, pos.x, pos.y - radiusPx - 2);
     }
+  }
+
+  /**
+   * 選手1人の視野範囲（距離 `config.ai.visionDistance` × 角度 `player.params.vision`）を
+   * 扇形で薄く描画する（デバッグ用）。中心軸は `facingDirection`（直近の移動方向、
+   * 静止時は攻撃方向）。ゲーム座標の (dx, dy) は `toCanvas` と同じ x/y 入れ替えで
+   * キャンバス方向 (dy, dx) に変換してから角度を求める。
+   */
+  private drawVisionCone(player: Player): void {
+    const { ctx } = this;
+    const pos = this.toCanvas(player.pos);
+    const facing = facingDirection(player);
+    const centerAngle = Math.atan2(facing.x, facing.y);
+    const halfAngleRad = (player.params.vision / 2) * (Math.PI / 180);
+    const radiusPx = this.config.ai.visionDistance * SCALE;
+
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
+    ctx.arc(pos.x, pos.y, radiusPx, centerAngle - halfAngleRad, centerAngle + halfAngleRad);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(255, 235, 59, 0.15)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255, 235, 59, 0.6)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
   }
 
   /** ボールを白丸で描画する。半径は物理サイズ(m)基準だが、小さすぎて見えなくならないよう最小3pxを保証する。 */

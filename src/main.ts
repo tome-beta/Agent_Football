@@ -95,7 +95,8 @@ function main() {
   const roleGroupsRoot = document.getElementById("role-groups");
   const toggleBtn = document.getElementById("toggleBtn") as HTMLButtonElement | null;
   const restartBtn = document.getElementById("restartBtn") as HTMLButtonElement | null;
-  if (!canvasElement || !roleGroupsRoot || !toggleBtn || !restartBtn) {
+  const debugVisionToggle = document.getElementById("debugVisionToggle") as HTMLInputElement | null;
+  if (!canvasElement || !roleGroupsRoot || !toggleBtn || !restartBtn || !debugVisionToggle) {
     throw new Error("Required DOM elements not found");
   }
 
@@ -135,6 +136,10 @@ function main() {
   toggleBtn.addEventListener("click", () => {
     running = !running;
     toggleBtn.textContent = running ? "一時停止" : "再開";
+  });
+
+  debugVisionToggle.addEventListener("change", () => {
+    renderer.setDebugVision(debugVisionToggle.checked);
   });
 
   restartBtn.addEventListener("click", () => {
