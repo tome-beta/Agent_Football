@@ -96,7 +96,7 @@ function applyAimError(dir: Vec2, accuracy: number, state: GameState, config: Ga
 function moveToward(player: Player, target: Vec2, config: GameConfig): void {
   const toTarget = sub(target, player.pos);
   const dist = length(toTarget);
-  if (dist < 0.1) {
+  if (dist < config.ai.moveStopThreshold) {
     player.vel = { x: 0, y: 0 };
     return;
   }
@@ -126,7 +126,7 @@ function selectPassReceiver(player: Player, state: GameState, config: GameConfig
   let bestScore = -Infinity;
   for (const candidate of candidates) {
     const marked = oppTeam.players.some(
-      (o) => distance(o.pos, candidate.pos) <= config.ai.tackleDistance * 2
+      (o) => distance(o.pos, candidate.pos) <= config.ai.tackleDistance * config.ai.markedRadiusFactor
     );
     const distToGoal = distance(candidate.pos, goal);
     const score = (marked ? -1000 : 0) - distToGoal;
@@ -160,16 +160,29 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
 
   const receiver = selectPassReceiver(player, state, config);
   if (receiver !== undefined) {
-    player.state = "Passing";
-    const dist = distance(player.pos, receiver.pos);
-    const dir = applyAimError(normalize(sub(receiver.pos, player.pos)), player.params.passAccuracy, state, config);
-    const power = Math.min(config.ball.maxSpeed, config.ai.passSpeed + dist * 0.3);
-    kickBall(ball, dir, power, player.id);
-    player.vel = { x: 0, y: 0 };
-    return;
+    // 受け手がいても、役割ではなく aggressiveness/vision に応じた確率であえてドリブルを選ぶことがある。
+    // aggressiveness が高いほど自分で運びたがり、vision が広いほど受け手を見つけやすくパスを選びやすい。
+    const dribbleChance = Math.max(
+      0,
+      Math.min(
+        1,
+        config.ai.dribbleChanceBase +
+          (player.params.aggressiveness - 0.5) * config.ai.dribbleChanceAggroSpread -
+          (player.params.vision / 180 - 0.5) * config.ai.dribbleChanceVisionSpread
+      )
+    );
+    if (!chance(state, dribbleChance)) {
+      player.state = "Passing";
+      const dist = distance(player.pos, receiver.pos);
+      const dir = applyAimError(normalize(sub(receiver.pos, player.pos)), player.params.passAccuracy, state, config);
+      const power = Math.min(config.ball.maxSpeed, config.ai.passSpeed + dist * config.ai.passSpeedDistanceFactor);
+      kickBall(ball, dir, power, player.id);
+      player.vel = { x: 0, y: 0 };
+      return;
+    }
   }
 
-  // パス相手もシュート機会もない: ゴール方向へドリブル（保持継続）。
+  // パス相手もシュート機会もない、またはあえてドリブルを選んだ: ゴール方向へドリブル（保持継続）。
   player.state = "Possession";
   moveToward(player, goal, config);
 }
@@ -186,6 +199,34 @@ function nearestPosTo(point: Vec2, candidates: Player[]): Vec2 | undefined {
     }
   }
   return nearest;
+}
+
+/**
+ * 敵ボール保持者を複数人で詰め寄るとき、全員が同じ方向（自ゴール寄り）から一直線に
+ * 近づいてしまうと「囲む」形にならず団子状に重なるだけになる。ここでは pressDistance
+ * 以内にいる味方（自分を含む）を id 順に並べて円周上のスロットに割り当て、各人が
+ * carrier を中心とした異なる角度から接近するようにする。
+ */
+function computeApproachPoint(
+  player: Player,
+  carrier: Player,
+  myTeam: Team,
+  own: Vec2,
+  p: GameConfig["ai"]["positioning"]
+): Vec2 {
+  const pressers = myTeam.players
+    .filter((m) => distance(m.pos, carrier.pos) <= p.pressDistance)
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const slot = pressers.findIndex((m) => m.id === player.id);
+  const n = pressers.length;
+  if (n <= 1) return carrier.pos;
+
+  const baseAngle = Math.atan2(own.y - carrier.pos.y, own.x - carrier.pos.x);
+  const angle = baseAngle + (2 * Math.PI * slot) / n;
+  return {
+    x: carrier.pos.x + Math.cos(angle) * p.surroundRadius,
+    y: carrier.pos.y + Math.sin(angle) * p.surroundRadius,
+  };
 }
 
 /**
@@ -228,23 +269,32 @@ function computeTargetPosition(player: Player, state: GameState, config: GameCon
 
     const dCarrier = distance(player.pos, carrier.pos);
     if (dCarrier <= p.pressDistance) {
-      const strength = p.pressWeight * player.params.aggressiveness;
-      target = add(target, scale(sub(carrier.pos, target), strength));
+      // 詰め寄るかどうかは役割ではなく aggressiveness に応じた確率で毎ターン決める。
+      // これにより同じ場面でも選手の反応が毎回変わり、かつ aggressiveness が高い選手ほど
+      // 積極的に前へ出る傾向がにじみ出る（features_1/開発メモの「役割分岐にしない」方針に沿う）。
+      const pressChance = Math.max(
+        0,
+        Math.min(1, p.pressChanceBase + (player.params.aggressiveness - 0.5) * p.pressChanceSpread)
+      );
+      if (chance(state, pressChance)) {
+        const strength = p.pressWeight * player.params.aggressiveness;
+        target = add(target, scale(sub(computeApproachPoint(player, carrier, myTeam, own, p), target), strength));
+      }
     }
   } else {
     const goal = attackGoal(player.team, config);
     const towardGoalDir = normalize(sub(goal, ball.pos));
-    const receivingDistance = config.ai.passDistance * 0.6;
+    const receivingDistance = config.ai.passDistance * p.receivingDistanceFactor;
     const base = length(towardGoalDir) < 1e-6 ? home : add(ball.pos, scale(towardGoalDir, receivingDistance));
 
-    // 近くに敵がいるときだけ回避する（遠い敵に対してまで毎回3mずらすと無意味に揺れる）。
-    const markerRange = config.ai.passDistance * 0.5;
+    // 近くに敵がいるときだけ回避する（遠い敵に対してまで毎回markerAvoidStepDistanceずらすと無意味に揺れる）。
+    const markerRange = config.ai.passDistance * p.markerAvoidRangeFactor;
     const marker = nearestPosTo(base, oppTeam.players);
     let openSpot = base;
     if (marker !== undefined && distance(base, marker) < markerRange) {
       const awayFromMarker = sub(base, marker);
       if (length(awayFromMarker) > 1e-6) {
-        openSpot = add(base, scale(normalize(awayFromMarker), 3));
+        openSpot = add(base, scale(normalize(awayFromMarker), p.markerAvoidStepDistance));
       }
     }
     target = { x: (openSpot.x + home.x) / 2, y: openSpot.y };

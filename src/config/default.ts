@@ -37,6 +37,12 @@ export const defaultConfig: GameConfig = {
     passSpeed: 10, // パスの基準初速 [m/s]
     shootSpeed: 22, // シュートの基準初速上限 [m/s]（shootPowerを掛けて減衰させる）
     aimErrorMaxDeg: 12, // passAccuracy/shootPowerが0のときの最大キック角度誤差 [度]
+    dribbleChanceBase: 0.15, // aggressiveness=0.5, vision=90度の選手が受け手ありでもドリブルを選ぶ基準確率
+    dribbleChanceAggroSpread: 0.4, // aggressivenessの偏差1あたりの確率変化幅（高いほど自分で運びたがる）
+    dribbleChanceVisionSpread: 0.3, // vision(/180)の偏差1あたりの確率変化幅（広いほど受け手を見つけやすくパスを選びやすい）
+    moveStopThreshold: 0.1, // この距離未満まで近づいたら移動を止める [m]
+    passSpeedDistanceFactor: 0.3, // パス距離1mあたりの初速上乗せ量 [m/s]
+    markedRadiusFactor: 2, // パス候補のマーク判定距離 = tackleDistance * この倍率
     positioning: {
       ballPullWeight: 0.5, // home からの追従上限 = distance(home, ownGoal) * この係数
       repulsionWeight: 4, // 味方が近すぎるときに離れる力の強さ [m]
@@ -48,6 +54,12 @@ export const defaultConfig: GameConfig = {
       coverWeight: 1, // ボール-自ゴール線への吸着ブレンド率
       pressWeight: 2, // 敵ボール保持者への詰め寄りブレンド率（aggressivenessと掛け合わせる）
       pressDistance: 20, // この距離以内の敵保持者にのみ詰め寄る [m]
+      surroundRadius: 2.5, // 複数人で詰め寄るとき、敵保持者を囲むリングの半径 [m]
+      pressChanceBase: 0.5, // aggressiveness=0.5 の選手が毎ターン実際に詰め寄る確率
+      pressChanceSpread: 1.0, // aggressiveness の偏差1あたりの確率変化幅
+      receivingDistanceFactor: 0.6, // 受け手ポジションの距離 = passDistance * この係数
+      markerAvoidRangeFactor: 0.5, // マーカー回避判定の範囲 = passDistance * この係数
+      markerAvoidStepDistance: 3, // マーカー回避時に横へずれる距離 [m]
     },
   },
   team: {

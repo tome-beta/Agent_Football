@@ -139,6 +139,21 @@ export interface GameConfig {
     shootSpeed: number;
     /** passAccuracy/shootPower が 0 のときの最大キック角度誤差 [度]。1 のとき誤差0。 */
     aimErrorMaxDeg: number;
+    /**
+     * パス受け手がいてもあえてドリブルを続ける基準確率（aggressiveness=0.5, vision=90度のときの値）。
+     * 役割分岐ではなく aggressiveness/vision の値がそのまま確率の差になる。
+     */
+    dribbleChanceBase: number;
+    /** aggressiveness の偏差1あたりドリブル確率をどれだけ振るか（高いほど自分で運びたがる）。 */
+    dribbleChanceAggroSpread: number;
+    /** vision の偏差（vision/180を基準に0.5からの差）1あたりドリブル確率をどれだけ下げるか（視野が広いほど受け手を見つけやすい）。 */
+    dribbleChanceVisionSpread: number;
+    /** この距離 [m] 未満まで近づいたら目標地点に到達したとみなし、移動を止める（moveToward）。 */
+    moveStopThreshold: number;
+    /** パス初速に、パス距離 [m] 1mあたり何 m/s 上乗せするか。 */
+    passSpeedDistanceFactor: number;
+    /** パス候補がマーク済みとみなす距離を tackleDistance の何倍とするか。 */
+    markedRadiusFactor: number;
     /** 非保持時のポジショニングを力の合成で決めるための重み（マイルストーンH）。 */
     positioning: {
       /** ボールを追う度合い。home からの追従距離の上限は distance(home, ownGoal) * この係数。 */
@@ -153,6 +168,21 @@ export interface GameConfig {
       pressWeight: number;
       /** この距離以内の敵ボール保持者にのみ詰め寄る [m]。 */
       pressDistance: number;
+      /** 複数人で詰め寄るとき、敵保持者を中心に囲む半径 [m]。 */
+      surroundRadius: number;
+      /**
+       * 毎ターン、実際に詰め寄るかどうかを確率で決める際の基準値（aggressiveness = 0.5 のときの確率）。
+       * 役割による分岐ではなく、aggressiveness の違いがそのまま確率の差になる。
+       */
+      pressChanceBase: number;
+      /** pressChanceBase から aggressiveness の偏差1あたりどれだけ確率を振るか（+/-方向）。 */
+      pressChanceSpread: number;
+      /** 受け手ポジション（ボールから攻撃ゴール方向）の距離を passDistance の何倍とするか。 */
+      receivingDistanceFactor: number;
+      /** 受け手ポジション付近の敵マーカーを回避判定する範囲を passDistance の何倍とするか。 */
+      markerAvoidRangeFactor: number;
+      /** マーカー回避時に横へずれる距離 [m]。 */
+      markerAvoidStepDistance: number;
     };
   };
   team: {
