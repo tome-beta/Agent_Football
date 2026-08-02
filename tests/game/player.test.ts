@@ -128,6 +128,34 @@ describe("decideAction: possession", () => {
     // ゴール(+y)方向へ向いている
     expect(carrier.vel.y).toBeGreaterThan(0);
   });
+
+  it("dribbles slower than a non-possessing player when passAccuracy is low", () => {
+    const config = loadConfig({ random: { seed: 1 } });
+
+    function carrierSpeed(passAccuracy: number) {
+      const state = createInitialState(config);
+      const carrier = state.teams.A.players.find((p) => p.role === "DF")!;
+      for (const p of state.teams.A.players) {
+        if (p.id !== carrier.id) p.pos = { x: 1000, y: 1000 };
+      }
+      carrier.params = { ...carrier.params, passAccuracy };
+      carrier.pos = { x: 0, y: -config.pitch.length / 2 + 5 };
+      state.ball.pos = { ...carrier.pos };
+      state.ball.status = "Possessed";
+      state.ball.possessorId = carrier.id;
+      config.ai.shootProbability = 0;
+
+      decideAction(carrier, state, config);
+      return Math.hypot(carrier.vel.x, carrier.vel.y);
+    }
+
+    const lowAccuracySpeed = carrierSpeed(0);
+    const highAccuracySpeed = carrierSpeed(1);
+
+    expect(lowAccuracySpeed).toBeLessThan(highAccuracySpeed);
+    const carrierBaseSpeed = config.team.roleParams.DF.speed;
+    expect(highAccuracySpeed).toBeCloseTo(Math.min(carrierBaseSpeed, config.player.maxSpeed), 5); // passAccuracy=1は減速なし
+  });
 });
 
 describe("decideAction: non-possessor", () => {

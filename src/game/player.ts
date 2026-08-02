@@ -93,15 +93,24 @@ function applyAimError(dir: Vec2, accuracy: number, state: GameState, config: Ga
   return { x: dir.x * cos - dir.y * sin, y: dir.x * sin + dir.y * cos };
 }
 
-/** target に向かって player.vel を設定する（十分近ければ停止）。 */
-function moveToward(player: Player, target: Vec2, config: GameConfig): void {
+/** target に向かって player.vel を設定する（十分近ければ停止）。speedFactor で速度を係数倍する。 */
+function moveToward(player: Player, target: Vec2, config: GameConfig, speedFactor = 1): void {
   const toTarget = sub(target, player.pos);
   const dist = length(toTarget);
   if (dist < config.ai.moveStopThreshold) {
     player.vel = { x: 0, y: 0 };
     return;
   }
-  player.vel = scale(normalize(toTarget), effectiveSpeed(player, config));
+  player.vel = scale(normalize(toTarget), effectiveSpeed(player, config) * speedFactor);
+}
+
+/**
+ * ドリブル中（ボール保持しながらの移動）の速度倍率。passAccuracy をボールコントロールの
+ * 技術の代用とし、低いほど減速が大きい（passAccuracy=1で減速なし）。これにより独走で
+ * そのままゴールまで運びきる展開を抑え、パスの相対的な魅力を上げる。
+ */
+function dribbleSpeedFactor(player: Player, config: GameConfig): number {
+  return 1 - config.ai.dribbleSpeedPenaltyMax * (1 - player.params.passAccuracy);
 }
 
 /**
@@ -191,7 +200,7 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
 
   // パス相手もシュート機会もない、またはあえてドリブルを選んだ: ゴール方向へドリブル（保持継続）。
   player.state = "Possession";
-  moveToward(player, goal, config);
+  moveToward(player, goal, config, dribbleSpeedFactor(player, config));
 }
 
 /** candidates の中から point に最も近い選手の位置を返す。 */

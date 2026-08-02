@@ -161,6 +161,12 @@ export interface GameConfig {
     passSpeedDistanceFactor: number;
     /** パス候補がマーク済みとみなす距離を tackleDistance の何倍とするか。 */
     markedRadiusFactor: number;
+    /**
+     * ドリブル中（ボール保持しながらの移動）の最大減速率（0〜1）。passAccuracy=0のとき
+     * 速度が (1 - この値) 倍になる。passAccuracy=1では減速なし。独走でそのままゴールまで
+     * 運びきる展開を抑え、パスの相対的な魅力を上げる狙い。
+     */
+    dribbleSpeedPenaltyMax: number;
     /** 非保持時のポジショニングを力の合成で決めるための重み（マイルストーンH）。 */
     positioning: {
       /** ボールを追う度合い。home からの追従距離の上限は distance(home, ownGoal) * この係数。 */

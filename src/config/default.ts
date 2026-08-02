@@ -47,6 +47,7 @@ export const defaultConfig: GameConfig = {
     moveStopThreshold: 0.1, // この距離未満まで近づいたら移動を止める [m]
     passSpeedDistanceFactor: 0.3, // パス距離1mあたりの初速上乗せ量 [m/s]
     markedRadiusFactor: 2, // パス候補のマーク判定距離 = tackleDistance * この倍率
+    dribbleSpeedPenaltyMax: 0.3, // ドリブル中の最大減速率（passAccuracy=0で30%減速、1で減速なし）
     positioning: {
       ballPullWeight: 0.5, // home からの追従上限 = distance(home, ownGoal) * この係数
       repulsionWeight: 4, // 味方が近すぎるときに離れる力の強さ [m]
