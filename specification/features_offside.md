@@ -84,10 +84,71 @@ ai: {
 - `tests/game/player.test.ts`: `selectPassReceiver` がオフサイドポジションの候補を除外すること
 - 導入前後で `balance-check`/`anomaly-hunt` を用いて勝敗分布・試合展開の比較を行う
 
-## ステップ2（将来検討・今回は未着手）
+## ステップ2: 反則としてのターンオーバー処理（設計確定・2026-08-03）
 
-- パスがオフサイド判定されたレシーバーに向かって飛んでいる状態を `Ball` に一時フラグとして持たせ（例: `offsideOffenderId`）、`resolveBallPossession` でそのレシーバーが最初に触れた瞬間に反則を成立させ、`handleOutOfBounds`（`src/game/match.ts`）と同型の「相手ボールで再開」処理を行う
-- `config.ai.offside.enabled` でステップ2の反則処理も切り替え可能にする
+ステップ1導入後も `avoidChance`（既定0.4）の確率で「あえてオフサイドの選手へパスしてしまう」ケースが残っている。ステップ2はこの見逃しケースを実際の反則として処理する。
+
+### 全体フロー
+
+```
+パスを蹴る（decidePossessionAction）
+  → 受け手がオフサイドポジションなら Ball.offsideOffenderId にその選手IDをセット
+  → ボールは通常どおり Free で飛ぶ（resolveBallPossession は無変更）
+  → stepMatch 内の新関数 handleOffside が「フラグの選手が実際に触れたか」を判定
+      - フラグの選手が保持者になった → 反則成立。相手ボールで再開（フラグを消す）
+      - フラグの選手以外が触れた（味方が拾う/敵がインターセプト） → 不成立。フラグだけ消して通常進行
+      - まだ誰も触れていない（Free のまま） → 何もせず次ターンへ持ち越す
+```
+
+「オフサイドポジションにいるだけでは反則でない」という実際のルールどおり、フラグは**パスを実行した瞬間だけ**セットする（受け手が動いてオンサイドに戻っても、パスした時点の判定は覆さない。現実のルールも「ボールがプレーされた瞬間」の位置で判定するため整合的）。
+
+### 型の変更
+
+```ts
+interface Ball {
+  // ...既存
+  /** ステップ1で見逃してオフサイドの選手へパスしてしまった場合の一時フラグ。
+   *  この選手が実際にボールに触れたら反則が成立する。それ以外の選手が触れたら不成立。 */
+  offsideOffenderId: string | null;
+}
+```
+
+`createBall` は `null` で初期化。`setupKickoff`（キックオフ再配置）・`checkGoal`（得点後リセット）・`handleOutOfBounds`（アウト再開）でも、他のボールフィールドと同様に `null` へ明示的にリセットする（`lastKickerId` とは逆に、新しい局面が始まったら持ち越さない）。
+
+### 実装箇所
+
+- **フラグを立てる場所**: `decidePossessionAction`（`player.ts`）のパス実行分岐。`selectPassReceiver` が既に計算しているオフサイド判定結果をそのまま使い、`kickBall` を呼ぶ直前に `receiver` がオフサイドなら `ball.offsideOffenderId = receiver.id` をセットする（同じ判定を2回計算しない）。
+- **反則の成立判定・再開処理**: `match.ts` に `handleOffside(state, config): boolean`（反則が成立したら `true`）を新設し、`checkGoal`/`handleOutOfBounds` と同じ並びで `stepMatch` から呼ぶ。「誰がボールを持っているか」の調停は `resolveBallPossession`（collision.ts）の責務、「ルール上の帰結（得点/反則/アウト）」は `match.ts` の責務、という既存の役割分担に乗せる（`collision.ts` にオフサイドの知識を持ち込まない）。
+
+```
+stepMatch の PLAYING 分岐:
+  if (!handleOffside(state, config)) {
+    if (!checkGoal(state, pitch)) {
+      handleOutOfBounds(state, pitch);
+    }
+  }
+```
+
+`handleOffside` を `checkGoal` より先に呼ぶのは、「オフサイドの選手が触れた瞬間」と「ゴール」が理論上同時に起きた場合に反則を優先するため。
+
+### 再開位置・再開権
+
+`handleOutOfBounds` と同型だが、再開位置は**ボールの現在位置**（＝オフサイドの選手が実際に触れた地点）を使う。`handleOutOfBounds` が中央に簡略化しているのと違い、ここは自然に地点情報があるためそのまま使う方が単純かつ現実のインダイレクトフリーキックの位置に近い。
+
+- 資格チーム = 反則した選手の相手チーム
+- 再開位置 = ボールの現在位置
+- その地点に最も近い資格チームの選手（既存の `nearestPlayerTo` を再利用）に持たせる
+- `lastKickerId` は更新しない（キックではないため、既存の奪取処理と同じ扱い）
+
+### Config
+
+新規フラグは追加しない。既存の `config.ai.offside.enabled` で（ステップ1のAI回避＋ステップ2の反則）をまとめてオン/オフする。ただし実装時は一時的に別スイッチを用意し、ステップ1単体とステップ2込みを balance-check で比較してから確定する（ステップ1導入時に段階的な急落を経験しているため、同じ手順で検証する）。
+
+### テスト計画
+
+- `tests/game/match.test.ts`: `handleOffside` の単体テスト（フラグが立った選手が触れたら反則成立・相手ボールで再開／別の選手が触れたら不成立でフラグだけ消える／まだ誰も触れていなければ何もしない）
+- `tests/game/player.test.ts`: オフサイドの選手へパスしてしまった場合に `ball.offsideOffenderId` がセットされることを確認
+- 導入前後で `balance-check`/`anomaly-hunt` を用いて勝敗分布・試合展開の比較を行う
 
 ## ステップ3（将来検討・今回は未着手）
 

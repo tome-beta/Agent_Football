@@ -153,6 +153,18 @@
 - [x] `tests/game/player.test.ts` に `selectPassReceiver` のオフサイド除外テストを追加（`avoidChance=1`で決定的に検証）
 - [x] 導入前後で `balance-check`/`anomaly-hunt` の手法を用いて試合展開・勝敗分布を比較し、上記の設計変更に反映した
 
+### マイルストーンJ: オフサイド判定 ステップ2（反則としてのターンオーバー処理）
+
+マイルストーンIで見逃した（`avoidChance` の確率で発生する）オフサイドパスを、実際の反則として処理する。設計は [`specification/features_offside.md`](specification/features_offside.md)「ステップ2」を参照（2026-08-03設計確定）。
+
+- [ ] `Ball.offsideOffenderId`（`string | null`）を追加し、`createBall`/`setupKickoff`/`checkGoal`/`handleOutOfBounds` で `null` にリセットする `types`/`ball`/`match`
+- [ ] `decidePossessionAction`（パス実行分岐）で、選ばれた受け手がオフサイドなら `ball.offsideOffenderId` をセットする `player`
+- [ ] `handleOffside(state, config): boolean` を `src/game/match.ts` に新設し、`stepMatch` の `PLAYING` 分岐で `checkGoal`/`handleOutOfBounds` より先に呼ぶ（フラグの選手が保持者になったら反則成立・相手ボールで再開、それ以外が触れたら不成立でフラグだけ消す）`match`
+- [ ] 再開処理: 資格チーム=反則した選手の相手チーム、再開位置=ボールの現在位置、`nearestPlayerTo` で最寄りの選手に持たせる（`lastKickerId` は更新しない）
+- [ ] `tests/game/match.test.ts` に `handleOffside` の単体テストを追加（反則成立/不成立/未決着の3パターン）
+- [ ] `tests/game/player.test.ts` に、オフサイドの選手へパスした場合に `ball.offsideOffenderId` がセットされることのテストを追加
+- [ ] 実装時は一時的に別スイッチでステップ1単体とステップ2込みを `balance-check` 比較してから `config.ai.offside.enabled` に統合する
+
 ---
 
 ## 第二ステップ以降（後回し・発展）
