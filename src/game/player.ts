@@ -2,6 +2,7 @@ import type { Player, PlayerParams, Role, Team, TeamSide, Vec2, GameState, GameC
 import { add, sub, scale, length, normalize, distance, clampMagnitude } from "./utils";
 import { kickBall } from "./ball";
 import { nextRandomRange, chance } from "./random";
+import { isOffside, lastDefenderLineY } from "./offside";
 
 /** `homePos` を初期位置として選手を1人生成する（`pos`/`homePos` は別オブジェクトとしてコピーする）。 */
 export function createPlayer(
@@ -117,9 +118,15 @@ function selectPassReceiver(player: Player, state: GameState, config: GameConfig
   const oppTeam = state.teams[opposite(player.team)];
   const goal = attackGoal(player.team, config);
 
-  const candidates = myTeam.players.filter(
-    (p) => p.id !== player.id && distance(player.pos, p.pos) <= config.ai.passDistance
-  );
+  // オフサイドポジションの候補は avoidChance の確率で候補から除外する。完全除外（確率1.0固定）に
+  // すると縦パスという崩し手段が丸ごと消え、得点数が導入前の約1/5まで落ち込む強い偏りが
+  // 確認されたため、確率的な回避に留める（`specification/features_offside.md` ステップ1）。
+  // ballPosAtKick は蹴り手（player）の現在位置＝保持中のボール位置と一致する。
+  const candidates = myTeam.players.filter((p) => {
+    if (p.id === player.id || distance(player.pos, p.pos) > config.ai.passDistance) return false;
+    const offside = config.ai.offside.enabled && isOffside(p.pos, player.team, oppTeam, player.pos, config);
+    return !(offside && chance(state, config.ai.offside.avoidChance));
+  });
   if (candidates.length === 0) return undefined;
 
   let best: Player | undefined;
@@ -298,6 +305,17 @@ function computeTargetPosition(player: Player, state: GameState, config: GameCon
       }
     }
     target = { x: (openSpot.x + home.x) / 2, y: openSpot.y };
+
+    // 受け手ポジションが相手最終ラインより前に出ていたら、ソフトにラインへ引き戻す
+    // （ハードクランプだと味方・敵双方が団子状に固まって動けなくなる不安定性が確認されたため、
+    // ブレンド率での部分補正に留める。`specification/features_offside.md` 参照）。
+    if (config.ai.offside.enabled) {
+      const lineY = lastDefenderLineY(player.team, oppTeam, config);
+      const beyondLine = player.team === "A" ? target.y > lineY : target.y < lineY;
+      if (beyondLine) {
+        target.y = target.y + (lineY - target.y) * config.ai.offside.pullWeight;
+      }
+    }
   }
 
   for (const mate of myTeam.players) {

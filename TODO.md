@@ -141,17 +141,17 @@
 - [x] パラメータ探索 — `interceptDistance=1.5` 固定で `interceptChance` を0.2/0.4/0.7/1.0で比較し、0.2が最も互角（20試合で勝敗8/6/6、総得点50-50）だったためデフォルト採用。0.4以上は守備側が有利になりすぎる
 - [x] テスト追加 — `tests/game/collision.test.ts` にインターセプト成立/不成立/味方除外/距離境界のケースを追加（全122件）、typecheck・headless実行で確認
 
-### マイルストーンI: オフサイド判定（ステップ1・AI回避のみ）
+### マイルストーンI: オフサイド判定（ステップ1・AI回避のみ）✅ 完了
 
-実試合を観察して「ボールより前方に味方が張り付く」「相手守備がゴール前に戻らない」という違和感の原因がオフサイドルール不在にあると判明（2026-08-01）。詳細設計は [`specification/features_offside.md`](specification/features_offside.md) を参照。今回は反則としてのルール適用（ターンオーバー処理）は含めず、AIがオフサイドになる受け手選択・ポジショニングをそもそも選ばないようにする範囲に限定する。
+実試合を観察して「ボールより前方に味方が張り付く」「相手守備がゴール前に戻らない」という違和感の原因がオフサイドルール不在にあると判明（2026-08-01）。詳細設計は [`specification/features_offside.md`](specification/features_offside.md) を参照。反則としてのルール適用（ターンオーバー処理）は含めず、AIがオフサイドになる受け手選択・ポジショニングを避ける範囲に限定した。
 
-- [ ] `GameConfig.ai.offside`（`enabled`/`lineToleranceMeters`）を追加し `src/config/default.ts` にデフォルト値を設定する `config`
-- [ ] `isOffside(receiverPos, side, defendingTeam, ballPosAtKick, config)` を `src/game/offside.ts` に新規実装する `offside`
-- [ ] `selectPassReceiver`（`src/game/player.ts`）にオフサイド候補の除外フィルタを追加する `player`
-- [ ] `computeTargetPosition` の受け手ポジション算出（非敵保持時の分岐）をオフサイドラインでクランプする `player`
-- [ ] `tests/game/offside.test.ts` を追加（境界値・A/B攻撃方向反転を含む）
-- [ ] `tests/game/player.test.ts` に `selectPassReceiver` のオフサイド除外テストを追加
-- [ ] 導入前後で `balance-check`/`anomaly-hunt` を用いて試合展開・勝敗分布を比較する
+- [x] `GameConfig.ai.offside`（`enabled`/`lineToleranceMeters`/`pullWeight`/`avoidChance`）を追加し `src/config/default.ts` にデフォルト値を設定する `config`
+- [x] `isOffside(receiverPos, side, defendingTeam, ballPosAtKick, config)` と `lastDefenderLineY(side, defendingTeam, config)` を `src/game/offside.ts` に新規実装する `offside`
+- [x] `selectPassReceiver`（`src/game/player.ts`）にオフサイド候補の除外を追加する `player` — **当初案（完全除外）は20試合の balance-check で平均得点が5.00→1.05まで急落したため、`avoidChance` による確率的な除外に変更**（0.7/0.4/0.2/0.1を比較し、無効時に最も近い0.4を採用。平均4.60）
+- [x] `computeTargetPosition` の受け手ポジション算出（非敵保持時の分岐）をオフサイドラインで補正する `player` — **当初案（ハードクランプ）は両チームの選手とボールがオフサイドライン付近に団子状に固まって動けなくなり平均得点が0.00まで落ち込んだため、`pullWeight` によるソフトな引き戻し力に変更**（ただしpullWeight自体の得点への影響は小さいと判明。詳細は `specification/features_offside.md`「実装後の設計変更」）
+- [x] `tests/game/offside.test.ts` を追加（`isOffside`/`lastDefenderLineY` の境界値・A/B攻撃方向反転を含む6件）
+- [x] `tests/game/player.test.ts` に `selectPassReceiver` のオフサイド除外テストを追加（`avoidChance=1`で決定的に検証）
+- [x] 導入前後で `balance-check`/`anomaly-hunt` の手法を用いて試合展開・勝敗分布を比較し、上記の設計変更に反映した
 
 ---
 
