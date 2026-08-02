@@ -36,7 +36,7 @@
 
 抽象インターフェース `Renderer` は Types 層（`src/types.ts`）に置いています。Renderer 層が「差し替え可能な実装の集まり」であるのに対し、その契約は game / simulation 層からも参照されるためです。
 
-**Node から `NullRenderer` を使うときは `src/renderer/nullRenderer` を直接 import すること。** `src/renderer/index.ts` 経由だと DOM 依存の `CanvasRenderer` を巻き込みます。
+**Node から `NullRenderer` を使うときは `src/renderer/nullRenderer` を直接 import すること。** `src/renderer/index.ts` 経由だと DOM 依存の `CanvasRenderer` を巻き込みます（CLAUDE.md にも同じ注意を記載）。
 
 **特性**：
 - Game 層のモデル（型）を受け取り、画面に描画
