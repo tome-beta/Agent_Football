@@ -153,17 +153,14 @@
 - [x] `tests/game/player.test.ts` に `selectPassReceiver` のオフサイド除外テストを追加（`avoidChance=1`で決定的に検証）
 - [x] 導入前後で `balance-check`/`anomaly-hunt` の手法を用いて試合展開・勝敗分布を比較し、上記の設計変更に反映した
 
-### マイルストーンJ: オフサイド判定 ステップ2（反則としてのターンオーバー処理）
+### マイルストーンJ: オフサイド判定 ステップ2（反則としてのターンオーバー処理）— ⏸ 実装を試みたが撤回
 
-マイルストーンIで見逃した（`avoidChance` の確率で発生する）オフサイドパスを、実際の反則として処理する。設計は [`specification/features_offside.md`](specification/features_offside.md)「ステップ2」を参照（2026-08-03設計確定）。
+マイルストーンIで見逃した（`avoidChance` の確率で発生する）オフサイドパスを、実際の反則として処理しようとした。設計・実装後の顛末は [`specification/features_offside.md`](specification/features_offside.md)「ステップ2」を参照（2026-08-03）。
 
-- [ ] `Ball.offsideOffenderId`（`string | null`）を追加し、`createBall`/`setupKickoff`/`checkGoal`/`handleOutOfBounds` で `null` にリセットする `types`/`ball`/`match`
-- [ ] `decidePossessionAction`（パス実行分岐）で、選ばれた受け手がオフサイドなら `ball.offsideOffenderId` をセットする `player`
-- [ ] `handleOffside(state, config): boolean` を `src/game/match.ts` に新設し、`stepMatch` の `PLAYING` 分岐で `checkGoal`/`handleOutOfBounds` より先に呼ぶ（フラグの選手が保持者になったら反則成立・相手ボールで再開、それ以外が触れたら不成立でフラグだけ消す）`match`
-- [ ] 再開処理: 資格チーム=反則した選手の相手チーム、再開位置=ボールの現在位置、`nearestPlayerTo` で最寄りの選手に持たせる（`lastKickerId` は更新しない）
-- [ ] `tests/game/match.test.ts` に `handleOffside` の単体テストを追加（反則成立/不成立/未決着の3パターン）
-- [ ] `tests/game/player.test.ts` に、オフサイドの選手へパスした場合に `ball.offsideOffenderId` がセットされることのテストを追加
-- [ ] 実装時は一時的に別スイッチでステップ1単体とステップ2込みを `balance-check` 比較してから `config.ai.offside.enabled` に統合する
+- [x] 設計どおり `Ball.offsideOffenderId`/`handleOffside` を実装してみたが、20シードの `balance-check` で平均得点が5.10→1.00へ急落。パスの95%が自然にオフサイドと判定される（受け手ポジショニングが常に相手最終ラインより前を狙う設計のため）ことが原因と判明
+- [x] 受け手ポジションをラインへ引き戻す強さ（`pullWeight`）を1.0まで強めればオフサイド率は9%まで下がるが、代わりに当初のハードクランプと同じ「団子化して試合が止まる」不安定性が再発し平均得点0.05まで悪化。**団子化とオフサイド頻発の間に許容できる中間点がなく、ブレンド率の調整では解決不可能**と判断し実装を撤回
+- [x] `Ball.offsideOffenderId`/`handleOffside`/関連テストはすべてリバート。ただし副産物の `offsideLineY`（オフサイドラインの計算にボール位置も含める整理）は正しさの改善として `src/game/offside.ts` にコミット済み
+- [ ] （再挑戦の前提）受け手ポジショニング算出ロジック自体を「相手守備陣形との距離を継続的に考慮する」設計に作り直す。作り直した後、自然なオフサイド率が十分低い（目安20%未満）ことを確認してから反則化に再挑戦する
 
 ---
 

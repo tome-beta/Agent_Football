@@ -2,7 +2,7 @@ import type { Player, PlayerParams, Role, Team, TeamSide, Vec2, GameState, GameC
 import { add, sub, scale, length, normalize, distance, clampMagnitude } from "./utils";
 import { kickBall } from "./ball";
 import { nextRandomRange, chance } from "./random";
-import { isOffside, lastDefenderLineY } from "./offside";
+import { isOffside, offsideLineY } from "./offside";
 
 /** `homePos` を初期位置として選手を1人生成する（`pos`/`homePos` は別オブジェクトとしてコピーする）。 */
 export function createPlayer(
@@ -315,11 +315,12 @@ function computeTargetPosition(player: Player, state: GameState, config: GameCon
     }
     target = { x: (openSpot.x + home.x) / 2, y: openSpot.y };
 
-    // 受け手ポジションが相手最終ラインより前に出ていたら、ソフトにラインへ引き戻す
-    // （ハードクランプだと味方・敵双方が団子状に固まって動けなくなる不安定性が確認されたため、
-    // ブレンド率での部分補正に留める。`specification/features_offside.md` 参照）。
+    // 受け手ポジションが（ボールと相手最終ラインのうち深い方で決まる）オフサイドラインより
+    // 前に出ていたら、ソフトにラインへ引き戻す（ハードクランプだと味方・敵双方が団子状に
+    // 固まって動けなくなる不安定性が確認されたため、ブレンド率での部分補正に留める。
+    // `specification/features_offside.md` 参照）。
     if (config.ai.offside.enabled) {
-      const lineY = lastDefenderLineY(player.team, oppTeam, config);
+      const lineY = offsideLineY(player.team, oppTeam, ball.pos, config);
       const beyondLine = player.team === "A" ? target.y > lineY : target.y < lineY;
       if (beyondLine) {
         target.y = target.y + (lineY - target.y) * config.ai.offside.pullWeight;

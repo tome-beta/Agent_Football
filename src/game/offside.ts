@@ -6,11 +6,24 @@ function advancement(pos: Vec2, side: TeamSide): number {
 }
 
 /**
- * レシーバーがオフサイドポジションにいるか判定する（`specification/features_offside.md`）。
+ * 攻撃側 side から見たオフサイドラインのy座標（許容誤差は含まない）。
+ * 「相手最終ライン」と「ボール位置」のうち、より攻撃方向に進んでいる方を採用する
+ * （FIFAの本質どおり。ボールより深い相手最終ラインの位置だけを基準にすると、
+ * ボールが前に運ばれている場面でも受け手が不自然に押し戻される問題があった）。
  *
  * GKが存在しないため「後ろから2番目の相手選手」の代わりに、守備側の中で自ゴールに
- * 最も近い1人（＝攻撃方向に最も進んだ選手）を最終ラインとする。判定対象はパスのみで、
- * 自陣ハーフルール（自陣にいる限りオフサイドにならない例外）は簡略化のため省略する。
+ * 最も近い1人（＝攻撃方向に最も進んだ選手）を最終ラインとする。
+ */
+export function offsideLineY(side: TeamSide, defendingTeam: Team, ballPos: Vec2, config: GameConfig): number {
+  const lastDefenderAdv = Math.max(...defendingTeam.players.map((p) => advancement(p.pos, side)));
+  const lineAdv = Math.max(advancement(ballPos, side), lastDefenderAdv);
+  return side === "A" ? lineAdv : -lineAdv;
+}
+
+/**
+ * レシーバーがオフサイドポジションにいるか判定する（`specification/features_offside.md`）。
+ * 判定対象はパスのみで、自陣ハーフルール（自陣にいる限りオフサイドにならない例外）は
+ * 簡略化のため省略する。
  *
  * @param ballPosAtKick パスを蹴った瞬間のボール位置（保持中は蹴り手の位置と一致する）。
  */
@@ -21,17 +34,7 @@ export function isOffside(
   ballPosAtKick: Vec2,
   config: GameConfig
 ): boolean {
-  const lastDefenderAdv = Math.max(...defendingTeam.players.map((p) => advancement(p.pos, side)));
-  const offsideLineAdv = Math.max(advancement(ballPosAtKick, side), lastDefenderAdv);
-  return advancement(receiverPos, side) > offsideLineAdv + config.ai.offside.lineToleranceMeters;
-}
-
-/**
- * 受け手ポジショニング用: 相手最終ラインだけを基準にしたオンサイド上限のy座標を返す
- * （`computeTargetPosition` がソフトな引き戻し力として使う。ボール位置は判定材料に含めない
- * — パス実行前は「実際にパスされる保証」がないため）。
- */
-export function lastDefenderLineY(side: TeamSide, defendingTeam: Team, config: GameConfig): number {
-  const lastDefenderAdv = Math.max(...defendingTeam.players.map((p) => advancement(p.pos, side)));
-  return side === "A" ? lastDefenderAdv : -lastDefenderAdv;
+  const lineY = offsideLineY(side, defendingTeam, ballPosAtKick, config);
+  const tolerance = config.ai.offside.lineToleranceMeters;
+  return side === "A" ? receiverPos.y > lineY + tolerance : receiverPos.y < lineY - tolerance;
 }

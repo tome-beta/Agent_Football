@@ -4,5 +4,5 @@ export { createPlayer, createTeam, formationPos, decideAction, stepPlayer, facin
 export { canKick, resolvePlayerBall, resolveBallPossession, resolvePlayerPlayer } from "./collision";
 export { createInitialState, currentScore, advancePhase, stepMatch, finalizeResult } from "./match";
 export { nextRandom, nextRandomRange, chance } from "./random";
-export { isOffside, lastDefenderLineY } from "./offside";
+export { isOffside, offsideLineY } from "./offside";
 export { add, sub, scale, length, normalize, distance, clampMagnitude } from "./utils";
