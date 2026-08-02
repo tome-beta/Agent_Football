@@ -191,6 +191,26 @@ export interface GameConfig {
       /** マーカー回避時に横へずれる距離 [m]。 */
       markerAvoidStepDistance: number;
     };
+    /** オフサイド判定（ステップ1: AI回避のみ。反則としてのターンオーバー処理は未実装）。 */
+    offside: {
+      /** オフサイド判定を有効にするか。既存試合バランスとの比較用スイッチ。 */
+      enabled: boolean;
+      /** 同一ラインとみなす許容誤差 [m]。 */
+      lineToleranceMeters: number;
+      /**
+       * 受け手ポジションが相手最終ラインより前に出たとき、ラインへ引き戻す強さ（0〜1のブレンド率）。
+       * ハードクランプにすると味方・敵双方の実位置が団子状に固まって動けなくなる不安定性が
+       * 確認されたため、ソフトな引き戻し力として実装する（詳細: specification/features_offside.md）。
+       */
+      pullWeight: number;
+      /**
+       * オフサイドポジションの候補をパス受け手から除外する確率（0〜1）。
+       * 完全除外（1.0固定）にすると縦パスという崩し手段が丸ごと消え、得点数が
+       * 導入前の約1/5まで落ち込む強い偏りが確認されたため、確率的な回避に緩めている
+       * （詳細: specification/features_offside.md）。
+       */
+      avoidChance: number;
+    };
   };
   team: {
     /** 役割ごとのデフォルト選手パラメータ。 */

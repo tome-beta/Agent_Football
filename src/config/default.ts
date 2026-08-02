@@ -65,6 +65,14 @@ export const defaultConfig: GameConfig = {
       markerAvoidRangeFactor: 0.5, // マーカー回避判定の範囲 = passDistance * この係数
       markerAvoidStepDistance: 3, // マーカー回避時に横へずれる距離 [m]
     },
+    offside: {
+      enabled: true,
+      lineToleranceMeters: 0.5, // 同一ラインとみなす許容誤差 [m]
+      pullWeight: 0.4, // オフサイドライン超過時にラインへ引き戻す強さ（ブレンド率）
+      // 0.7/0.4/0.2/0.1 を20試合ずつ比較。無効時の平均得点5.00に対し0.7は3.65まで
+      // 落ち込み偏りが強すぎたため、最も近い0.4を採用（4.60、勝敗分布も無効時に近い）。
+      avoidChance: 0.4, // オフサイドポジションの候補をパス受け手から除外する確率
+    },
   },
   team: {
     // features_1 §8.2 のサンプル選手データに準拠。

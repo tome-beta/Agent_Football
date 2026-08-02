@@ -79,6 +79,34 @@ describe("decideAction: possession", () => {
     expect(state.ball.lastKickerId).toBe(passer.id);
   });
 
+  it("does not pass to a teammate in an offside position (avoidChance=1)", () => {
+    const config = loadConfig();
+    config.ai.offside.avoidChance = 1; // 確率的な回避を決定的にしてテストする
+    const state = createInitialState(config);
+    const passer = state.teams.A.players.find((p) => p.role === "MF")!;
+    const offsideReceiver = state.teams.A.players.find((p) => p.role === "FW")!;
+
+    passer.pos = { x: 0, y: 0 };
+    // 他の味方はパス圏外へ飛ばし、唯一の候補をオフサイドポジションに置く。
+    for (const p of state.teams.A.players) {
+      if (p.id !== passer.id && p.id !== offsideReceiver.id) p.pos = { x: 1000, y: 1000 };
+    }
+    // 相手最終ライン(y=5付近)より前かつパス射程内に置く。
+    for (const o of state.teams.B.players) o.pos = { x: 20, y: 5 };
+    offsideReceiver.pos = { x: 3, y: 10 };
+    state.ball.pos = { ...passer.pos };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = passer.id;
+
+    config.ai.shootProbability = 0;
+
+    decideAction(passer, state, config);
+
+    // 唯一のパス候補がオフサイドのため、パスもシュートもできずドリブルを続ける。
+    expect(passer.state).toBe("Possession");
+    expect(state.ball.status).toBe("Possessed");
+  });
+
   it("dribbles toward the goal when no pass target or shot is available", () => {
     const config = loadConfig({ random: { seed: 1 } });
     const state = createInitialState(config);
