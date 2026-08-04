@@ -254,6 +254,38 @@ describe("decideAction: non-possessor", () => {
     expect(onTargetSpot).not.toEqual(farAway);
   });
 
+  it("caps the receiving-position forward reach by remaining distance to goal (positioning redesign method A)", () => {
+    const config = loadConfig({ random: { seed: 1 } });
+
+    function settledSupporterY(forwardReachFraction: number): number {
+      config.ai.offside.forwardReachFraction = forwardReachFraction;
+      const state = createInitialState(config);
+      const supporter = state.teams.A.players.find((p) => p.role === "MF")!;
+      const carrier = state.teams.A.players.find((p) => p.role === "FW")!;
+      // 敵はオフサイドラインの引き戻し（offsideLineY）が効かないよう遠くへ飛ばす。
+      for (const o of state.teams.B.players) o.pos = { x: 1000, y: 1000 };
+
+      // ボールをゴールまで残り5mの地点に固定する。
+      const ballY = config.pitch.length / 2 - 5;
+      state.ball.pos = { x: 0, y: ballY };
+      state.ball.status = "Possessed";
+      state.ball.possessorId = carrier.id;
+      supporter.pos = { x: 0, y: 0 };
+
+      for (let i = 0; i < 200; i++) {
+        decideAction(supporter, state, config);
+        stepPlayer(supporter, config);
+      }
+      return supporter.pos.y;
+    }
+
+    const cappedY = settledSupporterY(0.1); // 残り5m * 0.1 = 0.5mしか前進を許さない
+    const uncappedY = settledSupporterY(1.0); // 残り5m * 1.0 = passDistance*0.6の方が効く（無効化に近い）
+
+    // キャップが強いほど、支援ポジションはボールに近い（あまり前進しない）位置に留まるはず。
+    expect(cappedY).toBeLessThan(uncappedY);
+  });
+
   it("tracks a free ball only if nearest, otherwise moves toward a supportive position (not literal home)", () => {
     // 回帰テスト: 以前は非最寄りの選手が formationPos ぴったりへ戻っていた。
     // パス/シュート後にボールが誰にも保持されていない時間は長く続くため、その都度
