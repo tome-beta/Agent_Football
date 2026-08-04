@@ -216,6 +216,12 @@ export interface GameConfig {
        * （詳細: specification/features_offside.md）。
        */
       avoidChance: number;
+      /**
+       * 受け手ポジションの前進距離の上限を「ボールからゴールまでの残り距離」の何倍とするか
+       * （方式A: 受け手ポジショニング再設計。`specification/features_positioning_redesign.md`）。
+       * 相手の実位置を参照しないため、相手守備との相互フィードバックループを起こさない。
+       */
+      forwardReachFraction: number;
     };
   };
   team: {

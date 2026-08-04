@@ -300,7 +300,14 @@ function computeTargetPosition(player: Player, state: GameState, config: GameCon
   } else {
     const goal = attackGoal(player.team, config);
     const towardGoalDir = normalize(sub(goal, ball.pos));
-    const receivingDistance = config.ai.passDistance * p.receivingDistanceFactor;
+    let receivingDistance = config.ai.passDistance * p.receivingDistanceFactor;
+    // 受け手ポジションの前進距離を「ボールからゴールまでの残り距離」の一定割合でも頭打ちにする
+    // （方式A: features_positioning_redesign.md）。相手の実位置を一切参照しないため、相手の
+    // 守備ポジショニングと相互に反応し合うフィードバックループが構造的に発生しない。
+    if (config.ai.offside.enabled) {
+      const remainingToGoal = distance(ball.pos, goal);
+      receivingDistance = Math.min(receivingDistance, remainingToGoal * config.ai.offside.forwardReachFraction);
+    }
     const base = length(towardGoalDir) < 1e-6 ? home : add(ball.pos, scale(towardGoalDir, receivingDistance));
 
     // 近くに敵がいるときだけ回避する（遠い敵に対してまで毎回markerAvoidStepDistanceずらすと無意味に揺れる）。
