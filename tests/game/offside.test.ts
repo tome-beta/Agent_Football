@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isOffside, lastDefenderLineY } from "../../src/game/offside";
+import { isOffside, offsideLineY } from "../../src/game/offside";
 import { createInitialState } from "../../src/game/match";
 import { loadConfig } from "../../src/simulation/config";
 
@@ -59,15 +59,23 @@ describe("isOffside", () => {
   });
 });
 
-describe("lastDefenderLineY", () => {
-  it("returns the defending team's most advanced player's y, signed by attacking direction", () => {
+describe("offsideLineY", () => {
+  it("returns the defending team's most advanced player's y when the ball is deeper", () => {
     const config = loadConfig();
     const state = createInitialState(config);
 
     for (const p of state.teams.B.players) p.pos = { x: 0, y: 10 };
-    expect(lastDefenderLineY("A", state.teams.B, config)).toBeCloseTo(10);
+    expect(offsideLineY("A", state.teams.B, { x: 0, y: 0 }, config)).toBeCloseTo(10);
 
     for (const p of state.teams.A.players) p.pos = { x: 0, y: -10 };
-    expect(lastDefenderLineY("B", state.teams.A, config)).toBeCloseTo(-10);
+    expect(offsideLineY("B", state.teams.A, { x: 0, y: 0 }, config)).toBeCloseTo(-10);
+  });
+
+  it("uses the ball's position when it is more advanced than the last defender", () => {
+    const config = loadConfig();
+    const state = createInitialState(config);
+
+    for (const p of state.teams.B.players) p.pos = { x: 0, y: -5 };
+    expect(offsideLineY("A", state.teams.B, { x: 0, y: 8 }, config)).toBeCloseTo(8);
   });
 });
