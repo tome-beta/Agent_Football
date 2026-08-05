@@ -222,6 +222,14 @@ export interface GameConfig {
        * 相手の実位置を参照しないため、相手守備との相互フィードバックループを起こさない。
        */
       forwardReachFraction: number;
+      /**
+       * 方式Aの上限内で、相手DFとの到達時間比較（distance/speed）によりさらに前進距離を
+       * 絞り込む（方式C）。この値は「自分の到達時間 <= 相手最速到達者の到達時間 + この値」
+       * を安全とみなす際の余裕 [秒]。0なら同着まで許容、正の値ほど慎重になる。
+       */
+      arrivalSafetyMarginSeconds: number;
+      /** 前進距離をサンプリングする段階数（多いほど滑らかだが計算コストが増える）。 */
+      arrivalSampleSteps: number;
     };
   };
   team: {
