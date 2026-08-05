@@ -79,6 +79,12 @@ export const defaultConfig: GameConfig = {
       // 単独では目標(20%未満)に届かないが、団子化なしに95%→68%まで下げられた
       // （詳細: specification/features_positioning_redesign.md 方式A）。
       forwardReachFraction: 0.3, // 受け手の前進上限 = distance(ball, goal) * この係数
+      // -0.5〜0.2を比較。負に振るほどオフサイド率は下がるが得点も下がる滑らかな
+      // トレードオフ（-0.2で14%/1.25点、-0.15で33%/2.60点）。目標(20%未満)には
+      // 届かないが、0なら追加コストなしに方式A単独の68%から59%まで改善するため採用。
+      // 詳細は specification/features_positioning_redesign.md 方式C参照。
+      arrivalSafetyMarginSeconds: 0, // 到達時間比較の余裕[秒]
+      arrivalSampleSteps: 8, // 前進距離のサンプリング段階数
     },
   },
   team: {

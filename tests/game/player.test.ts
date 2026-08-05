@@ -286,6 +286,38 @@ describe("decideAction: non-possessor", () => {
     expect(cappedY).toBeLessThan(uncappedY);
   });
 
+  it("shortens the safe forward distance when a defender guards the receiving spot (positioning redesign method C)", () => {
+    const config = loadConfig({ random: { seed: 1 } });
+    config.ai.positioning.markerAvoidRangeFactor = 0; // マーカー回避を無効化し、方式Cの効果だけを見る
+    config.ai.offside.forwardReachFraction = 1; // 方式Aの上限が効かないようにする
+
+    function settledSupporterY(defenderPos: { x: number; y: number }): number {
+      const state = createInitialState(config);
+      const supporter = state.teams.A.players.find((p) => p.role === "MF")!;
+      const carrier = state.teams.A.players.find((p) => p.role === "FW")!;
+      for (const o of state.teams.B.players) o.pos = { x: 1000, y: 1000 };
+      state.teams.B.players[0].pos = defenderPos;
+
+      state.ball.pos = { x: 0, y: 0 };
+      state.ball.status = "Possessed";
+      state.ball.possessorId = carrier.id;
+      supporter.pos = { x: 0, y: -10 };
+
+      for (let i = 0; i < 200; i++) {
+        decideAction(supporter, state, config);
+        stepPlayer(supporter, config);
+      }
+      return supporter.pos.y;
+    }
+
+    const receivingDistance = config.ai.passDistance * config.ai.positioning.receivingDistanceFactor;
+    // 相手DFが受け手候補地点そのものを固めている場合と、遠くにいて無関係な場合を比較する。
+    const guardedY = settledSupporterY({ x: 0, y: receivingDistance });
+    const undefendedY = settledSupporterY({ x: 1000, y: 1000 });
+
+    expect(guardedY).toBeLessThan(undefendedY);
+  });
+
   it("tracks a free ball only if nearest, otherwise moves toward a supportive position (not literal home)", () => {
     // 回帰テスト: 以前は非最寄りの選手が formationPos ぴったりへ戻っていた。
     // パス/シュート後にボールが誰にも保持されていない時間は長く続くため、その都度

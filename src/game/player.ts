@@ -203,6 +203,37 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
   moveToward(player, goal, config, dribbleSpeedFactor(player, config));
 }
 
+/**
+ * ボールから towardGoalDir 方向へ最大 maxDistance まで進んだ直線上を、後ろから前へ
+ * サンプリングし、「自分が到達する時間 <= 相手DFのうち最速到達者の時間 + 安全マージン」
+ * を満たす最も前進した距離を返す（方式C: features_positioning_redesign.md）。
+ * 到達時間は distance / effectiveSpeed で近似する。
+ *
+ * maxDistance は呼び出し側（方式Aの前進距離キャップ）が渡すため、このサンプリングは
+ * 常に方式Aの安全な上限の内側に収まる。相手の実位置を参照するのはこの範囲内での
+ * 微調整のみであり、方式Aの「団子化しない」という保証を壊さない。
+ */
+function safeForwardDistance(
+  player: Player,
+  ballPos: Vec2,
+  towardGoalDir: Vec2,
+  maxDistance: number,
+  defendingTeam: Team,
+  config: GameConfig
+): number {
+  const steps = config.ai.offside.arrivalSampleSteps;
+  for (let i = steps; i >= 0; i--) {
+    const d = (maxDistance * i) / steps;
+    const candidate = add(ballPos, scale(towardGoalDir, d));
+    const myTime = distance(player.pos, candidate) / effectiveSpeed(player, config);
+    const oppTime = Math.min(
+      ...defendingTeam.players.map((o) => distance(o.pos, candidate) / effectiveSpeed(o, config))
+    );
+    if (myTime <= oppTime + config.ai.offside.arrivalSafetyMarginSeconds) return d;
+  }
+  return 0;
+}
+
 /** candidates の中から point に最も近い選手の位置を返す。 */
 function nearestPosTo(point: Vec2, candidates: Player[]): Vec2 | undefined {
   let nearest: Vec2 | undefined;
@@ -307,6 +338,8 @@ function computeTargetPosition(player: Player, state: GameState, config: GameCon
     if (config.ai.offside.enabled) {
       const remainingToGoal = distance(ball.pos, goal);
       receivingDistance = Math.min(receivingDistance, remainingToGoal * config.ai.offside.forwardReachFraction);
+      // 方式Aで求めた上限の範囲内で、相手DFとの到達時間比較によりさらに絞り込む（方式C）。
+      receivingDistance = safeForwardDistance(player, ball.pos, towardGoalDir, receivingDistance, oppTeam, config);
     }
     const base = length(towardGoalDir) < 1e-6 ? home : add(ball.pos, scale(towardGoalDir, receivingDistance));
 
