@@ -9,6 +9,7 @@ export function createBall(): Ball {
     status: "Free",
     possessorId: null,
     lastKickerId: null,
+    offsideOffenderId: null,
   };
 }
 

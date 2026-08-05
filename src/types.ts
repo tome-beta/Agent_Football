@@ -47,6 +47,12 @@ export interface Ball {
   possessorId: string | null;
   /** 最後にボールを蹴った選手ID（アウト時の再開権・得点者判定に使う）。保持者とは別物。 */
   lastKickerId: string | null;
+  /**
+   * ステップ1の回避（avoidChance）を確率的にすり抜けてオフサイドの選手へパスしてしまった場合の
+   * 一時フラグ。パスを実行した瞬間だけセットする。この選手が実際にボールに触れたら反則が成立し、
+   * それ以外の選手が触れたら不成立としてフラグだけ消える（`specification/features_offside.md` ステップ2）。
+   */
+  offsideOffenderId: string | null;
 }
 
 export type MatchPhase =

@@ -67,7 +67,14 @@ export const defaultConfig: GameConfig = {
       markerAvoidStepDistance: 3, // マーカー回避時に横へずれる距離 [m]
     },
     offside: {
-      enabled: true,
+      // ステップ2（反則としてのターンオーバー処理、Ball.offsideOffenderId/handleOffside）を
+      // 2026-08-05 に実装したが、方式A・C導入後も自然なオフサイド率が59%と高いままのため、
+      // 20シードのbalance-checkで平均得点が導入前の約4.6点/試合→0.45点/試合まで急落する
+      // 再現性のある破滅的偏りを確認した（マイルストーンJ・2026-08-03の再現）。
+      // このフラグはステップ1（AI回避）とステップ2（反則）をまとめてオン/オフするため、
+      // 一旦 false にして無効化している。再挑戦には受け手ポジショニングのさらなる改善
+      // （方式D等、自然なオフサイド率20%未満が目安）が前提。詳細: specification/features_offside.md
+      enabled: false,
       lineToleranceMeters: 0.5, // 同一ラインとみなす許容誤差 [m]
       pullWeight: 0.4, // オフサイドライン超過時にラインへ引き戻す強さ（ブレンド率）
       // 0.7/0.4/0.2/0.1 を20試合ずつ比較。無効時の平均得点5.00に対し0.7は3.65まで

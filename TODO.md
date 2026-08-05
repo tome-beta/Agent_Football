@@ -172,7 +172,18 @@
 - [x] 方式C（到達時間ベースの簡易Pitch Control）を方式Aの上に重ねて実装 `player` — `safeForwardDistance` を追加し、方式Aの上限内をサンプリングして「自分の到達時間 <= 相手DF最速到達者の到達時間 + `arrivalSafetyMarginSeconds`」を満たす最前進distanceを選ぶ。方式Aの上限内でのみ絞り込むため団子化の性質を壊さない
 - [x] `arrivalSafetyMarginSeconds` を-0.5〜0.2でbalance-check・自然なオフサイド率を計測。以前のような非線形な完全崩壊はなく、なめらかなトレードオフ曲線と判明（-0.2で14%/1.25点、-0.15で33%/2.60点）。追加コストなしに改善する`margin=0`（59%/4.45点）を採用し、目標（20%未満）達成は保留とした
 - [x] `tests/game/player.test.ts` に方式Cの安全距離短縮のテストを追加
-- [ ] 目標未達のため、方式D（KPP的な候補点スコアリング）で表現力を上げるか、現状の改善幅（68%→59%）でステップ2（反則化）に再挑戦するかを検討する
+- [x] 目標未達（59%）のまま方式D検討をスキップし、ステップ2（反則化）に再挑戦してみた — 結果はマイルストーンLに記載。「方式Dで20%未満まで下げてから」という前提を確認しないまま進めたため、想定どおり同じ破滅的偏りが再現した
+
+### マイルストーンL: オフサイド判定 ステップ2 再挑戦（2026-08-05）— ⏸ 再度撤回、デフォルト無効化
+
+マイルストーンKの目標（自然なオフサイド率20%未満）が未達（59%）のまま、ユーザーの指示でステップ2（反則化）に再挑戦した。設計は `specification/features_offside.md`「ステップ2」の設計をそのまま再実装。詳細は同ファイル末尾の追記を参照。
+
+- [x] `Ball.offsideOffenderId` を再追加し `src/game/ball.ts`/`src/types.ts` に実装。`decidePossessionAction`（`player.ts`）のパス実行時にオフサイド判定済みの受け手ならフラグを立てる
+- [x] `handleOffside(state, config)` を `src/game/match.ts` に実装し、`stepMatch` から `checkGoal`/`handleOutOfBounds` より先に呼ぶ。フラグの選手が実際に保持したら反則成立で相手ボール（ボールの現在地から再開）、他の選手が触れたら不成立でフラグだけ消える
+- [x] `tests/game/match.test.ts`（`handleOffside` の反則成立/不成立/持ち越しの3件）・`tests/game/player.test.ts`（パス時のフラグ設定/非設定2件）を追加。全138件通過・typecheckも通過
+- [x] 20シードの `balance-check` で確認 — **平均得点が4.6→0.45点/試合まで急落**（引き分け13/20）し、マイルストーンJ(2026-08-03)と同じ破滅的偏りが方式A・C導入後も再現することを確認した
+- [x] `config.ai.offside.enabled` のデフォルトを `true` → `false` に変更し無効化した（`src/config/default.ts` にコメントで経緯を明記）。**今回はコード自体（`Ball.offsideOffenderId`/`handleOffside`/関連テスト）はリポジトリに残す**方針とした（マイルストーンJでは撤回時にコード自体を削除したが、今回はユーザー判断で温存）
+- [ ] 再挑戦の前提条件（マイルストーンK: 自然なオフサイド率20%未満）を満たしてから `config.ai.offside.enabled` を再度 `true` に戻すこと。方式D等でポジショニングをさらに改善しない限り有効化しない
 
 ---
 

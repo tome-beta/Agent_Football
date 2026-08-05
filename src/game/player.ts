@@ -192,6 +192,13 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
       const dist = distance(player.pos, receiver.pos);
       const dir = applyAimError(normalize(sub(receiver.pos, player.pos)), player.params.passAccuracy, state, config);
       const power = Math.min(config.ball.maxSpeed, config.ai.passSpeed + dist * config.ai.passSpeedDistanceFactor);
+      // ステップ1の avoidChance をすり抜けてオフサイドの選手へパスしてしまった場合、
+      // 反則判定用にフラグを立てる（ball.offsideOffenderId、ステップ2）。
+      const oppTeam = state.teams[opposite(player.team)];
+      ball.offsideOffenderId =
+        config.ai.offside.enabled && isOffside(receiver.pos, player.team, oppTeam, player.pos, config)
+          ? receiver.id
+          : null;
       kickBall(ball, dir, power, player.id);
       player.vel = { x: 0, y: 0 };
       return;

@@ -81,6 +81,7 @@ describe("decideAction: possession", () => {
 
   it("does not pass to a teammate in an offside position (avoidChance=1)", () => {
     const config = loadConfig();
+    config.ai.offside.enabled = true; // デフォルトは無効化しているため個別テストで有効化する
     config.ai.offside.avoidChance = 1; // 確率的な回避を決定的にしてテストする
     const state = createInitialState(config);
     const passer = state.teams.A.players.find((p) => p.role === "MF")!;
@@ -105,6 +106,57 @@ describe("decideAction: possession", () => {
     // 唯一のパス候補がオフサイドのため、パスもシュートもできずドリブルを続ける。
     expect(passer.state).toBe("Possession");
     expect(state.ball.status).toBe("Possessed");
+  });
+
+  it("flags ball.offsideOffenderId when a pass to an offside teammate slips through avoidChance", () => {
+    const config = loadConfig();
+    config.ai.offside.enabled = true; // デフォルトは無効化しているため個別テストで有効化する
+    config.ai.offside.avoidChance = 0; // ステップ1の確率的回避を無効化して必ずパスさせる
+    const state = createInitialState(config);
+    const passer = state.teams.A.players.find((p) => p.role === "MF")!;
+    const offsideReceiver = state.teams.A.players.find((p) => p.role === "FW")!;
+
+    passer.pos = { x: 0, y: 0 };
+    for (const p of state.teams.A.players) {
+      if (p.id !== passer.id && p.id !== offsideReceiver.id) p.pos = { x: 1000, y: 1000 };
+    }
+    for (const o of state.teams.B.players) o.pos = { x: 20, y: 5 };
+    offsideReceiver.pos = { x: 3, y: 10 };
+    state.ball.pos = { ...passer.pos };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = passer.id;
+
+    config.ai.shootProbability = 0;
+    // ドリブル継続を選ばせず必ずパスさせる（確率0を保証するため偏差項も0にする）。
+    config.ai.dribbleChanceBase = 0;
+    config.ai.dribbleChanceAggroSpread = 0;
+    config.ai.dribbleChanceVisionSpread = 0;
+
+    decideAction(passer, state, config);
+
+    expect(passer.state).toBe("Passing");
+    expect(state.ball.offsideOffenderId).toBe(offsideReceiver.id);
+  });
+
+  it("does not flag ball.offsideOffenderId when the receiver is onside", () => {
+    const config = loadConfig({ random: { seed: 1 } });
+    config.ai.offside.enabled = true; // デフォルトは無効化しているため個別テストで有効化する
+    const state = createInitialState(config);
+    const passer = state.teams.A.players.find((p) => p.role === "MF")!;
+    const receiver = state.teams.A.players.find((p) => p.role === "FW")!;
+
+    passer.pos = { x: 0, y: 0 };
+    receiver.pos = { x: 3, y: 5 };
+    state.ball.pos = { ...passer.pos };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = passer.id;
+
+    config.ai.shootProbability = 0;
+
+    decideAction(passer, state, config);
+
+    expect(passer.state).toBe("Passing");
+    expect(state.ball.offsideOffenderId).toBeNull();
   });
 
   it("dribbles toward the goal when no pass target or shot is available", () => {
@@ -256,6 +308,7 @@ describe("decideAction: non-possessor", () => {
 
   it("caps the receiving-position forward reach by remaining distance to goal (positioning redesign method A)", () => {
     const config = loadConfig({ random: { seed: 1 } });
+    config.ai.offside.enabled = true; // デフォルトは無効化しているため個別テストで有効化する
 
     function settledSupporterY(forwardReachFraction: number): number {
       config.ai.offside.forwardReachFraction = forwardReachFraction;
@@ -288,6 +341,7 @@ describe("decideAction: non-possessor", () => {
 
   it("shortens the safe forward distance when a defender guards the receiving spot (positioning redesign method C)", () => {
     const config = loadConfig({ random: { seed: 1 } });
+    config.ai.offside.enabled = true; // デフォルトは無効化しているため個別テストで有効化する
     config.ai.positioning.markerAvoidRangeFactor = 0; // マーカー回避を無効化し、方式Cの効果だけを見る
     config.ai.offside.forwardReachFraction = 1; // 方式Aの上限が効かないようにする
 

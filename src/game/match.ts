@@ -58,6 +58,7 @@ function setupKickoff(state: GameState, config: GameConfig): void {
   state.ball.vel = { x: 0, y: 0 };
   state.ball.status = "Possessed";
   state.ball.possessorId = kicker.id;
+  state.ball.offsideOffenderId = null;
 }
 
 function nearestPlayerTo(players: Player[], pos: { x: number; y: number }): Player {
@@ -95,6 +96,37 @@ function checkGoal(state: GameState, pitch: Pitch): boolean {
   ball.status = "Free";
   ball.vel = { x: 0, y: 0 };
   ball.possessorId = null;
+  ball.offsideOffenderId = null;
+  return true;
+}
+
+/**
+ * オフサイドの反則判定（ステップ2、features_offside.md）。ステップ1で `avoidChance` を
+ * すり抜けてオフサイドの選手へパスしてしまった場合、`ball.offsideOffenderId` にその選手IDが
+ * セットされている。その選手が実際にボールを保持した瞬間に反則が成立し、相手ボールで
+ * 現在地から再開する。それ以外の選手（味方/敵）が先に触れた場合は不成立としてフラグだけ消す。
+ * まだ誰も触れていない（Free のまま）場合は何もせず次ターンへ持ち越す。
+ */
+function handleOffside(state: GameState, config: GameConfig): boolean {
+  const { ball } = state;
+  if (!config.ai.offside.enabled || ball.offsideOffenderId === null) return false;
+  if (ball.status !== "Possessed") return false;
+
+  if (ball.possessorId !== ball.offsideOffenderId) {
+    ball.offsideOffenderId = null;
+    return false;
+  }
+
+  const offender = allPlayers(state).find((p) => p.id === ball.offsideOffenderId);
+  const entitledSide = opposite((offender as Player).team);
+  const spot = { ...ball.pos };
+  const receiver = nearestPlayerTo(state.teams[entitledSide].players, spot);
+
+  ball.status = "Possessed";
+  ball.vel = { x: 0, y: 0 };
+  ball.possessorId = receiver.id;
+  ball.pos = { ...receiver.pos };
+  ball.offsideOffenderId = null;
   return true;
 }
 
@@ -117,6 +149,7 @@ function handleOutOfBounds(state: GameState, pitch: Pitch): void {
   ball.vel = { x: 0, y: 0 };
   ball.possessorId = receiver.id;
   ball.pos = { ...receiver.pos };
+  ball.offsideOffenderId = null;
 }
 
 /**
@@ -197,8 +230,10 @@ export function stepMatch(state: GameState, config: GameConfig): void {
 
   if (state.phase === "PLAYING") {
     const pitch = new Pitch(config);
-    if (!checkGoal(state, pitch)) {
-      handleOutOfBounds(state, pitch);
+    if (!handleOffside(state, config)) {
+      if (!checkGoal(state, pitch)) {
+        handleOutOfBounds(state, pitch);
+      }
     }
   }
 

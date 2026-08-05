@@ -298,6 +298,61 @@ describe("stepMatch", () => {
     expect(state.phase).toBe("PLAYING");
   });
 
+  it("calls a foul when the flagged offside offender receives the ball, resetting to the opponent at the ball's spot", () => {
+    // デフォルトは無効化しているため個別テストで有効化する。
+    const config = loadConfig();
+    config.ai.offside.enabled = true;
+    const state = createInitialState(config);
+    state.phase = "PLAYING";
+    const offender = state.teams.A.players[0];
+    const spot = { x: 3, y: 5 };
+    state.ball.pos = spot;
+    state.ball.status = "Possessed";
+    state.ball.possessorId = offender.id;
+    state.ball.offsideOffenderId = offender.id;
+
+    stepMatch(state, config);
+
+    expect(state.ball.offsideOffenderId).toBeNull();
+    expect(state.teams.B.players.some((p) => p.id === state.ball.possessorId)).toBe(true);
+    const receiver = state.teams.B.players.find((p) => p.id === state.ball.possessorId)!;
+    expect(state.ball.pos).toEqual(receiver.pos);
+    expect(currentScore(state)).toEqual({ A: 0, B: 0 });
+  });
+
+  it("clears the offside flag without a foul when a different player touches the ball first", () => {
+    const config = loadConfig();
+    config.ai.offside.enabled = true;
+    const state = createInitialState(config);
+    state.phase = "PLAYING";
+    const offender = state.teams.A.players[0];
+    const otherPlayer = state.teams.A.players[1];
+    state.ball.pos = { x: 3, y: 5 };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = otherPlayer.id;
+    state.ball.offsideOffenderId = offender.id;
+
+    stepMatch(state, config);
+
+    expect(state.ball.offsideOffenderId).toBeNull();
+    expect(state.ball.possessorId).toBe(otherPlayer.id);
+  });
+
+  it("carries the offside flag over untouched while the ball is still free", () => {
+    const config = defaultConfig;
+    const state = createInitialState(config);
+    state.phase = "PLAYING";
+    const offender = state.teams.A.players[0];
+    state.ball.pos = { x: 1, y: 1 };
+    state.ball.vel = { x: 2, y: 0 };
+    state.ball.status = "Free";
+    state.ball.offsideOffenderId = offender.id;
+
+    stepMatch(state, config);
+
+    expect(state.ball.offsideOffenderId).toBe(offender.id);
+  });
+
   it("does nothing once the match has ended", () => {
     const config = defaultConfig;
     const state = createInitialState(config);
