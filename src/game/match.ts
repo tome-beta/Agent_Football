@@ -101,10 +101,10 @@ function checkGoal(state: GameState, pitch: Pitch): boolean {
 }
 
 /**
- * オフサイドの反則判定（ステップ2、features_offside.md）。ステップ1で `avoidChance` を
- * すり抜けてオフサイドの選手へパスしてしまった場合、`ball.offsideOffenderId` にその選手IDが
- * セットされている。その選手が実際にボールを保持した瞬間に反則が成立し、相手ボールで
- * 現在地から再開する。それ以外の選手（味方/敵）が先に触れた場合は不成立としてフラグだけ消す。
+ * オフサイドの反則判定（ステップ2、features_offside.md）。`selectPassReceiver` がオフサイドの
+ * 選手を受け手として選んでしまった場合、`ball.offsideOffenderId` にその選手IDがセットされている。
+ * その選手が実際にボールを保持した瞬間に反則が成立し、相手ボールで現在地から再開する。
+ * それ以外の選手（味方/敵）が先に触れた場合は不成立としてフラグだけ消す。
  * まだ誰も触れていない（Free のまま）場合は何もせず次ターンへ持ち越す。
  */
 function handleOffside(state: GameState, config: GameConfig): boolean {

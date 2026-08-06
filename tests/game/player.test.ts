@@ -79,10 +79,44 @@ describe("decideAction: possession", () => {
     expect(state.ball.lastKickerId).toBe(passer.id);
   });
 
-  it("does not pass to a teammate in an offside position (avoidChance=1)", () => {
+  it("prefers an onside teammate over an offside one (方式E: 統一スコアリング)", () => {
     const config = loadConfig();
     config.ai.offside.enabled = true; // デフォルトは無効化しているため個別テストで有効化する
-    config.ai.offside.avoidChance = 1; // 確率的な回避を決定的にしてテストする
+    config.ai.shootProbability = 0;
+    // ドリブル継続を選ばせず必ずパスさせる（確率0を保証するため偏差項も0にする）。
+    config.ai.dribbleChanceBase = 0;
+    config.ai.dribbleChanceAggroSpread = 0;
+    config.ai.dribbleChanceVisionSpread = 0;
+    const state = createInitialState(config);
+    const passer = state.teams.A.players.find((p) => p.role === "MF")!;
+    const onsideReceiver = state.teams.A.players.find((p) => p.role === "DF")!;
+    const offsideReceiver = state.teams.A.players.find((p) => p.role === "FW")!;
+
+    passer.pos = { x: 0, y: 0 };
+    // 相手最終ライン(y=5付近)より手前/前にそれぞれ候補を置く。両方ともパス射程内。
+    onsideReceiver.pos = { x: 0, y: 4 };
+    offsideReceiver.pos = { x: 0, y: 10 };
+    for (const o of state.teams.B.players) o.pos = { x: 20, y: 5 };
+    state.ball.pos = { ...passer.pos };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = passer.id;
+
+    decideAction(passer, state, config);
+
+    // オフサイド候補は前進度の報酬より超過ペナルティが上回るため、オンサイドの候補が選ばれる
+    // （= フラグが立たない）。marked/distToGoal だけの旧式スコアでは反映されなかった判断。
+    expect(passer.state).toBe("Passing");
+    expect(state.ball.offsideOffenderId).toBeNull();
+  });
+
+  it("still passes to the sole candidate even when it is offside (ソフトペナルティであり完全排除ではない)", () => {
+    const config = loadConfig();
+    config.ai.offside.enabled = true; // デフォルトは無効化しているため個別テストで有効化する
+    config.ai.shootProbability = 0;
+    // ドリブル継続を選ばせず必ずパスさせる（確率0を保証するため偏差項も0にする）。
+    config.ai.dribbleChanceBase = 0;
+    config.ai.dribbleChanceAggroSpread = 0;
+    config.ai.dribbleChanceVisionSpread = 0;
     const state = createInitialState(config);
     const passer = state.teams.A.players.find((p) => p.role === "MF")!;
     const offsideReceiver = state.teams.A.players.find((p) => p.role === "FW")!;
@@ -92,48 +126,15 @@ describe("decideAction: possession", () => {
     for (const p of state.teams.A.players) {
       if (p.id !== passer.id && p.id !== offsideReceiver.id) p.pos = { x: 1000, y: 1000 };
     }
-    // 相手最終ライン(y=5付近)より前かつパス射程内に置く。
     for (const o of state.teams.B.players) o.pos = { x: 20, y: 5 };
     offsideReceiver.pos = { x: 3, y: 10 };
     state.ball.pos = { ...passer.pos };
     state.ball.status = "Possessed";
     state.ball.possessorId = passer.id;
 
-    config.ai.shootProbability = 0;
-
     decideAction(passer, state, config);
 
-    // 唯一のパス候補がオフサイドのため、パスもシュートもできずドリブルを続ける。
-    expect(passer.state).toBe("Possession");
-    expect(state.ball.status).toBe("Possessed");
-  });
-
-  it("flags ball.offsideOffenderId when a pass to an offside teammate slips through avoidChance", () => {
-    const config = loadConfig();
-    config.ai.offside.enabled = true; // デフォルトは無効化しているため個別テストで有効化する
-    config.ai.offside.avoidChance = 0; // ステップ1の確率的回避を無効化して必ずパスさせる
-    const state = createInitialState(config);
-    const passer = state.teams.A.players.find((p) => p.role === "MF")!;
-    const offsideReceiver = state.teams.A.players.find((p) => p.role === "FW")!;
-
-    passer.pos = { x: 0, y: 0 };
-    for (const p of state.teams.A.players) {
-      if (p.id !== passer.id && p.id !== offsideReceiver.id) p.pos = { x: 1000, y: 1000 };
-    }
-    for (const o of state.teams.B.players) o.pos = { x: 20, y: 5 };
-    offsideReceiver.pos = { x: 3, y: 10 };
-    state.ball.pos = { ...passer.pos };
-    state.ball.status = "Possessed";
-    state.ball.possessorId = passer.id;
-
-    config.ai.shootProbability = 0;
-    // ドリブル継続を選ばせず必ずパスさせる（確率0を保証するため偏差項も0にする）。
-    config.ai.dribbleChanceBase = 0;
-    config.ai.dribbleChanceAggroSpread = 0;
-    config.ai.dribbleChanceVisionSpread = 0;
-
-    decideAction(passer, state, config);
-
+    // 他に選択肢がなければ、スコアが低くても唯一の候補へパスする（ハード除外ではない）。
     expect(passer.state).toBe("Passing");
     expect(state.ball.offsideOffenderId).toBe(offsideReceiver.id);
   });
