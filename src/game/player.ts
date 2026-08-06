@@ -211,34 +211,60 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
 }
 
 /**
- * ボールから towardGoalDir 方向へ最大 maxDistance まで進んだ直線上を、後ろから前へ
- * サンプリングし、「自分が到達する時間 <= 相手DFのうち最速到達者の時間 + 安全マージン」
- * を満たす最も前進した距離を返す（方式C: features_positioning_redesign.md）。
- * 到達時間は distance / effectiveSpeed で近似する。
+ * 方式D（KPP的な候補点スコアリング: features_positioning_redesign.md）。ボールから
+ * towardGoalDir 方向へ最大 maxDistance（方式Aの上限）まで進んだ直線上を複数サンプリングし、
+ * 各候補地点を次の3項の重み付き総和でスコアリングして argmax の前進距離を返す。
  *
- * maxDistance は呼び出し側（方式Aの前進距離キャップ）が渡すため、このサンプリングは
- * 常に方式Aの安全な上限の内側に収まる。相手の実位置を参照するのはこの範囲内での
- * 微調整のみであり、方式Aの「団子化しない」という保証を壊さない。
+ *   - forwardWeight * (前進度 0〜1)                      … 素直に前へ出たい欲求
+ *   - -offsideOvershootWeight * (オフサイドライン超過量[m]) … 超過するほど連続的に減点
+ *   - -arrivalDeficitWeight * (相手DF最速到達者への到達時間の遅れ[秒]、方式C由来)
+ *
+ * 方式A/Cの「ハード上限→事後クランプ／閾値カットオフ」という2段構えと違い、3項を
+ * 同時に評価してなだらかな1つの極大点を選ぶため、pullWeight のような事後補正が不要になる。
+ * maxDistance を超えないので、方式Aが保証する「団子化しない」性質は維持される。
  */
-function safeForwardDistance(
+function selectReceivingDistance(
   player: Player,
   ballPos: Vec2,
   towardGoalDir: Vec2,
   maxDistance: number,
+  side: TeamSide,
   defendingTeam: Team,
   config: GameConfig
 ): number {
-  const steps = config.ai.offside.arrivalSampleSteps;
-  for (let i = steps; i >= 0; i--) {
-    const d = (maxDistance * i) / steps;
+  const { kpp, arrivalSafetyMarginSeconds, arrivalSampleSteps, lineToleranceMeters } = config.ai.offside;
+  const lineY = offsideLineY(side, defendingTeam, ballPos, config);
+
+  let bestD = 0;
+  let bestScore = -Infinity;
+  for (let i = 0; i <= arrivalSampleSteps; i++) {
+    const d = (maxDistance * i) / arrivalSampleSteps;
     const candidate = add(ballPos, scale(towardGoalDir, d));
+
+    const overshoot =
+      side === "A"
+        ? Math.max(0, candidate.y - lineY - lineToleranceMeters)
+        : Math.max(0, lineY - candidate.y - lineToleranceMeters);
+
     const myTime = distance(player.pos, candidate) / effectiveSpeed(player, config);
     const oppTime = Math.min(
       ...defendingTeam.players.map((o) => distance(o.pos, candidate) / effectiveSpeed(o, config))
     );
-    if (myTime <= oppTime + config.ai.offside.arrivalSafetyMarginSeconds) return d;
+    const arrivalDeficit = Math.max(0, myTime - oppTime - arrivalSafetyMarginSeconds);
+
+    const forwardRatio = maxDistance > 1e-6 ? d / maxDistance : 0;
+
+    const score =
+      kpp.forwardWeight * forwardRatio -
+      kpp.offsideOvershootWeight * overshoot -
+      kpp.arrivalDeficitWeight * arrivalDeficit;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestD = d;
+    }
   }
-  return 0;
+  return bestD;
 }
 
 /** candidates の中から point に最も近い選手の位置を返す。 */
@@ -344,9 +370,10 @@ function computeTargetPosition(player: Player, state: GameState, config: GameCon
     // 守備ポジショニングと相互に反応し合うフィードバックループが構造的に発生しない。
     if (config.ai.offside.enabled) {
       const remainingToGoal = distance(ball.pos, goal);
-      receivingDistance = Math.min(receivingDistance, remainingToGoal * config.ai.offside.forwardReachFraction);
-      // 方式Aで求めた上限の範囲内で、相手DFとの到達時間比較によりさらに絞り込む（方式C）。
-      receivingDistance = safeForwardDistance(player, ball.pos, towardGoalDir, receivingDistance, oppTeam, config);
+      const maxForward = Math.min(receivingDistance, remainingToGoal * config.ai.offside.forwardReachFraction);
+      // 方式Aの上限内で、前進度・オフサイドライン超過量・相手DFとの到達時間差を
+      // 同時にスコアリングして最良の前進距離を選ぶ（方式D）。
+      receivingDistance = selectReceivingDistance(player, ball.pos, towardGoalDir, maxForward, player.team, oppTeam, config);
     }
     const base = length(towardGoalDir) < 1e-6 ? home : add(ball.pos, scale(towardGoalDir, receivingDistance));
 
@@ -361,18 +388,6 @@ function computeTargetPosition(player: Player, state: GameState, config: GameCon
       }
     }
     target = { x: (openSpot.x + home.x) / 2, y: openSpot.y };
-
-    // 受け手ポジションが（ボールと相手最終ラインのうち深い方で決まる）オフサイドラインより
-    // 前に出ていたら、ソフトにラインへ引き戻す（ハードクランプだと味方・敵双方が団子状に
-    // 固まって動けなくなる不安定性が確認されたため、ブレンド率での部分補正に留める。
-    // `specification/features_offside.md` 参照）。
-    if (config.ai.offside.enabled) {
-      const lineY = offsideLineY(player.team, oppTeam, ball.pos, config);
-      const beyondLine = player.team === "A" ? target.y > lineY : target.y < lineY;
-      if (beyondLine) {
-        target.y = target.y + (lineY - target.y) * config.ai.offside.pullWeight;
-      }
-    }
   }
 
   for (const mate of myTeam.players) {

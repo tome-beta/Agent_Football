@@ -210,12 +210,6 @@ export interface GameConfig {
       /** 同一ラインとみなす許容誤差 [m]。 */
       lineToleranceMeters: number;
       /**
-       * 受け手ポジションが相手最終ラインより前に出たとき、ラインへ引き戻す強さ（0〜1のブレンド率）。
-       * ハードクランプにすると味方・敵双方の実位置が団子状に固まって動けなくなる不安定性が
-       * 確認されたため、ソフトな引き戻し力として実装する（詳細: specification/features_offside.md）。
-       */
-      pullWeight: number;
-      /**
        * オフサイドポジションの候補をパス受け手から除外する確率（0〜1）。
        * 完全除外（1.0固定）にすると縦パスという崩し手段が丸ごと消え、得点数が
        * 導入前の約1/5まで落ち込む強い偏りが確認されたため、確率的な回避に緩めている
@@ -236,6 +230,20 @@ export interface GameConfig {
       arrivalSafetyMarginSeconds: number;
       /** 前進距離をサンプリングする段階数（多いほど滑らかだが計算コストが増える）。 */
       arrivalSampleSteps: number;
+      /**
+       * 方式D（KPP的な候補点スコアリング。`specification/features_positioning_redesign.md`）。
+       * 方式Aの上限内でサンプリングした各候補地点を、複数の項の重み付き総和でスコアリングし
+       * argmaxで前進距離を選ぶ。方式A/Cの「ハードな頭打ち→事後クランプ」という2段構えを廃し、
+       * 前進度・オフサイドライン超過量・相手DFとの到達時間差を単一のスコアで同時に評価する。
+       */
+      kpp: {
+        /** 前進度（0〜1、maxDistanceに対する比率）への報酬の重み。大きいほど積極的に前へ出る。 */
+        forwardWeight: number;
+        /** オフサイドラインを超過した距離[m]あたりのペナルティの重み。 */
+        offsideOvershootWeight: number;
+        /** 相手DF最速到達者に対する到達時間の遅れ[秒]（`arrivalSafetyMarginSeconds`超過分）あたりのペナルティの重み。 */
+        arrivalDeficitWeight: number;
+      };
     };
   };
   team: {

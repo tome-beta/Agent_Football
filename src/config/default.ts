@@ -76,7 +76,6 @@ export const defaultConfig: GameConfig = {
       // （方式D等、自然なオフサイド率20%未満が目安）が前提。詳細: specification/features_offside.md
       enabled: false,
       lineToleranceMeters: 0.5, // 同一ラインとみなす許容誤差 [m]
-      pullWeight: 0.4, // オフサイドライン超過時にラインへ引き戻す強さ（ブレンド率）
       // 0.7/0.4/0.2/0.1 を20試合ずつ比較。無効時の平均得点5.00に対し0.7は3.65まで
       // 落ち込み偏りが強すぎたため、最も近い0.4を採用（4.60、勝敗分布も無効時に近い）。
       avoidChance: 0.4, // オフサイドポジションの候補をパス受け手から除外する確率
@@ -92,6 +91,12 @@ export const defaultConfig: GameConfig = {
       // 詳細は specification/features_positioning_redesign.md 方式C参照。
       arrivalSafetyMarginSeconds: 0, // 到達時間比較の余裕[秒]
       arrivalSampleSteps: 8, // 前進距離のサンプリング段階数
+      // 方式D（KPP的な候補点スコアリング）。balance-checkで調整予定の暫定値。
+      kpp: {
+        forwardWeight: 1, // 前進度（0〜1）への報酬
+        offsideOvershootWeight: 2, // オフサイドライン超過1mあたりのペナルティ
+        arrivalDeficitWeight: 1, // 到達時間の遅れ1秒あたりのペナルティ
+      },
     },
   },
   team: {
