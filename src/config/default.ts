@@ -76,9 +76,6 @@ export const defaultConfig: GameConfig = {
       // （方式D等、自然なオフサイド率20%未満が目安）が前提。詳細: specification/features_offside.md
       enabled: false,
       lineToleranceMeters: 0.5, // 同一ラインとみなす許容誤差 [m]
-      // 0.7/0.4/0.2/0.1 を20試合ずつ比較。無効時の平均得点5.00に対し0.7は3.65まで
-      // 落ち込み偏りが強すぎたため、最も近い0.4を採用（4.60、勝敗分布も無効時に近い）。
-      avoidChance: 0.4, // オフサイドポジションの候補をパス受け手から除外する確率
       // 0.05/0.1/0.15/0.2/0.3/0.5/0.6/0.8/1.0 を比較。0.2以下は逆に悪化する
       // （オフサイド率75%超・平均得点も低下）。0.3が最良の組み合わせ（自然な
       // オフサイド率68%・平均得点4.55、無効時5.10に近い）だったため採用。
@@ -91,11 +88,13 @@ export const defaultConfig: GameConfig = {
       // 詳細は specification/features_positioning_redesign.md 方式C参照。
       arrivalSafetyMarginSeconds: 0, // 到達時間比較の余裕[秒]
       arrivalSampleSteps: 8, // 前進距離のサンプリング段階数
-      // 方式D（KPP的な候補点スコアリング）。balance-checkで調整予定の暫定値。
+      // 方式E（統一スコアリング）。selectPassReceiver/computeTargetPositionが共有する
+      // scoreReceivingSpot の重み。balance-checkで調整予定の暫定値。
       kpp: {
         forwardWeight: 1, // 前進度（0〜1）への報酬
         offsideOvershootWeight: 2, // オフサイドライン超過1mあたりのペナルティ
-        arrivalDeficitWeight: 1, // 到達時間の遅れ1秒あたりのペナルティ
+        arrivalDeficitWeight: 1, // 到達時間の遅れ1秒あたりのペナルティ（computeTargetPositionのみ）
+        markingWeight: 1, // マーク（敵接近）1mあたりのペナルティ
       },
     },
   },

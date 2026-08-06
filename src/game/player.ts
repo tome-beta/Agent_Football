@@ -114,6 +114,37 @@ function dribbleSpeedFactor(player: Player, config: GameConfig): number {
 }
 
 /**
+ * 方式E（統一スコアリング。`specification/features_positioning_redesign.md`）。ある地点が
+ * 「パスを受ける/そこへ動く価値」としてどれだけ良いかを単一のスコアで評価する。
+ * `selectPassReceiver`（誰にパスするか）と `computeTargetPosition`（どこへ動くか）の両方が
+ * この関数を共有する。方式A〜Dは「安全な位置を計算する側」だけを改善しており、「受け手を
+ * 選ぶ側」（旧: `marked ? -1000 : 0) - distToGoal`）とは無関係に動いていたため、位置取りを
+ * 改善しても自然なオフサイド率が下がりきらなかった。この断絶を解消するのが狙い。
+ *
+ *   - forwardWeight: ボールからゴールまでの残り距離に対する前進度（0〜1）への報酬
+ *   - offsideOvershootWeight: オフサイドライン超過量[m]へのペナルティ（連続値）
+ *   - markingWeight: 最も近い敵選手が `tackleDistance * markedRadiusFactor` より近づいた分[m]
+ *     へのペナルティ（旧: binaryな `marked` フラグを連続値化したもの）
+ */
+function scoreReceivingSpot(pos: Vec2, side: TeamSide, ballPos: Vec2, oppTeam: Team, config: GameConfig): number {
+  const { kpp, lineToleranceMeters } = config.ai.offside;
+  const goal = attackGoal(side, config);
+
+  const remaining = distance(ballPos, goal);
+  const advanced = remaining > 1e-6 ? Math.max(0, (remaining - distance(pos, goal)) / remaining) : 0;
+
+  const lineY = offsideLineY(side, oppTeam, ballPos, config);
+  const overshoot =
+    side === "A" ? Math.max(0, pos.y - lineY - lineToleranceMeters) : Math.max(0, lineY - pos.y - lineToleranceMeters);
+
+  const nearestOppDist = Math.min(...oppTeam.players.map((o) => distance(o.pos, pos)));
+  const markingRange = config.ai.tackleDistance * config.ai.markedRadiusFactor;
+  const markingPressure = Math.max(0, markingRange - nearestOppDist);
+
+  return kpp.forwardWeight * advanced - kpp.offsideOvershootWeight * overshoot - kpp.markingWeight * markingPressure;
+}
+
+/**
  * パス射程内の味方から、敵にマークされていない/ゴールに近い順で受け手を選ぶ（features_1 §3.1）。
  *
  * `isVisible` の視野角チェックはここでは使わない。ボールを保持している選手は
@@ -127,25 +158,24 @@ function selectPassReceiver(player: Player, state: GameState, config: GameConfig
   const oppTeam = state.teams[opposite(player.team)];
   const goal = attackGoal(player.team, config);
 
-  // オフサイドポジションの候補は avoidChance の確率で候補から除外する。完全除外（確率1.0固定）に
-  // すると縦パスという崩し手段が丸ごと消え、得点数が導入前の約1/5まで落ち込む強い偏りが
-  // 確認されたため、確率的な回避に留める（`specification/features_offside.md` ステップ1）。
-  // ballPosAtKick は蹴り手（player）の現在位置＝保持中のボール位置と一致する。
-  const candidates = myTeam.players.filter((p) => {
-    if (p.id === player.id || distance(player.pos, p.pos) > config.ai.passDistance) return false;
-    const offside = config.ai.offside.enabled && isOffside(p.pos, player.team, oppTeam, player.pos, config);
-    return !(offside && chance(state, config.ai.offside.avoidChance));
-  });
+  const candidates = myTeam.players.filter(
+    (p) => p.id !== player.id && distance(player.pos, p.pos) <= config.ai.passDistance
+  );
   if (candidates.length === 0) return undefined;
 
   let best: Player | undefined;
   let bestScore = -Infinity;
   for (const candidate of candidates) {
-    const marked = oppTeam.players.some(
-      (o) => distance(o.pos, candidate.pos) <= config.ai.tackleDistance * config.ai.markedRadiusFactor
-    );
-    const distToGoal = distance(candidate.pos, goal);
-    const score = (marked ? -1000 : 0) - distToGoal;
+    // enabled時は方式Eの統一スコアを使う。無効時は既存の marked/distToGoal 式のままにし、
+    // デフォルトのゲームバランス（オフサイド機能オフ時の挙動）を変えない。
+    const score = config.ai.offside.enabled
+      ? scoreReceivingSpot(candidate.pos, player.team, player.pos, oppTeam, config)
+      : (() => {
+          const marked = oppTeam.players.some(
+            (o) => distance(o.pos, candidate.pos) <= config.ai.tackleDistance * config.ai.markedRadiusFactor
+          );
+          return (marked ? -1000 : 0) - distance(candidate.pos, goal);
+        })();
     if (score > bestScore) {
       bestScore = score;
       best = candidate;
@@ -211,17 +241,13 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
 }
 
 /**
- * 方式D（KPP的な候補点スコアリング: features_positioning_redesign.md）。ボールから
- * towardGoalDir 方向へ最大 maxDistance（方式Aの上限）まで進んだ直線上を複数サンプリングし、
- * 各候補地点を次の3項の重み付き総和でスコアリングして argmax の前進距離を返す。
- *
- *   - forwardWeight * (前進度 0〜1)                      … 素直に前へ出たい欲求
- *   - -offsideOvershootWeight * (オフサイドライン超過量[m]) … 超過するほど連続的に減点
- *   - -arrivalDeficitWeight * (相手DF最速到達者への到達時間の遅れ[秒]、方式C由来)
- *
- * 方式A/Cの「ハード上限→事後クランプ／閾値カットオフ」という2段構えと違い、3項を
- * 同時に評価してなだらかな1つの極大点を選ぶため、pullWeight のような事後補正が不要になる。
- * maxDistance を超えないので、方式Aが保証する「団子化しない」性質は維持される。
+ * 方式E（統一スコアリング: features_positioning_redesign.md）。ボールから towardGoalDir
+ * 方向へ最大 maxDistance（方式Aの上限）まで進んだ直線上を複数サンプリングし、各候補地点を
+ * 「共有スコア `scoreReceivingSpot`（前進度・オフサイドライン超過量・マーク圧力）」に
+ * 「自分がそこへ実際に到達できるかという個人固有の到達時間項（方式C由来）」を加えた
+ * スコアで評価し、argmax の前進距離を返す。到達時間項は動く本人にしか意味を持たないため
+ * 共有スコア関数には含めていない。maxDistance を超えないので、方式Aが保証する
+ * 「団子化しない」性質は維持される。
  */
 function selectReceivingDistance(
   player: Player,
@@ -232,8 +258,7 @@ function selectReceivingDistance(
   defendingTeam: Team,
   config: GameConfig
 ): number {
-  const { kpp, arrivalSafetyMarginSeconds, arrivalSampleSteps, lineToleranceMeters } = config.ai.offside;
-  const lineY = offsideLineY(side, defendingTeam, ballPos, config);
+  const { kpp, arrivalSafetyMarginSeconds, arrivalSampleSteps } = config.ai.offside;
 
   let bestD = 0;
   let bestScore = -Infinity;
@@ -241,23 +266,14 @@ function selectReceivingDistance(
     const d = (maxDistance * i) / arrivalSampleSteps;
     const candidate = add(ballPos, scale(towardGoalDir, d));
 
-    const overshoot =
-      side === "A"
-        ? Math.max(0, candidate.y - lineY - lineToleranceMeters)
-        : Math.max(0, lineY - candidate.y - lineToleranceMeters);
-
     const myTime = distance(player.pos, candidate) / effectiveSpeed(player, config);
     const oppTime = Math.min(
       ...defendingTeam.players.map((o) => distance(o.pos, candidate) / effectiveSpeed(o, config))
     );
     const arrivalDeficit = Math.max(0, myTime - oppTime - arrivalSafetyMarginSeconds);
 
-    const forwardRatio = maxDistance > 1e-6 ? d / maxDistance : 0;
-
     const score =
-      kpp.forwardWeight * forwardRatio -
-      kpp.offsideOvershootWeight * overshoot -
-      kpp.arrivalDeficitWeight * arrivalDeficit;
+      scoreReceivingSpot(candidate, side, ballPos, defendingTeam, config) - kpp.arrivalDeficitWeight * arrivalDeficit;
 
     if (score > bestScore) {
       bestScore = score;

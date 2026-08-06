@@ -48,9 +48,9 @@ export interface Ball {
   /** 最後にボールを蹴った選手ID（アウト時の再開権・得点者判定に使う）。保持者とは別物。 */
   lastKickerId: string | null;
   /**
-   * ステップ1の回避（avoidChance）を確率的にすり抜けてオフサイドの選手へパスしてしまった場合の
-   * 一時フラグ。パスを実行した瞬間だけセットする。この選手が実際にボールに触れたら反則が成立し、
-   * それ以外の選手が触れたら不成立としてフラグだけ消える（`specification/features_offside.md` ステップ2）。
+   * `selectPassReceiver`（`src/game/player.ts`）がオフサイドの選手を受け手として選んでしまった
+   * 場合の一時フラグ。パスを実行した瞬間だけセットする。この選手が実際にボールに触れたら反則が
+   * 成立し、それ以外の選手が触れたら不成立としてフラグだけ消える（`specification/features_offside.md` ステップ2）。
    */
   offsideOffenderId: string | null;
 }
@@ -210,13 +210,6 @@ export interface GameConfig {
       /** 同一ラインとみなす許容誤差 [m]。 */
       lineToleranceMeters: number;
       /**
-       * オフサイドポジションの候補をパス受け手から除外する確率（0〜1）。
-       * 完全除外（1.0固定）にすると縦パスという崩し手段が丸ごと消え、得点数が
-       * 導入前の約1/5まで落ち込む強い偏りが確認されたため、確率的な回避に緩めている
-       * （詳細: specification/features_offside.md）。
-       */
-      avoidChance: number;
-      /**
        * 受け手ポジションの前進距離の上限を「ボールからゴールまでの残り距離」の何倍とするか
        * （方式A: 受け手ポジショニング再設計。`specification/features_positioning_redesign.md`）。
        * 相手の実位置を参照しないため、相手守備との相互フィードバックループを起こさない。
@@ -231,18 +224,30 @@ export interface GameConfig {
       /** 前進距離をサンプリングする段階数（多いほど滑らかだが計算コストが増える）。 */
       arrivalSampleSteps: number;
       /**
-       * 方式D（KPP的な候補点スコアリング。`specification/features_positioning_redesign.md`）。
-       * 方式Aの上限内でサンプリングした各候補地点を、複数の項の重み付き総和でスコアリングし
-       * argmaxで前進距離を選ぶ。方式A/Cの「ハードな頭打ち→事後クランプ」という2段構えを廃し、
-       * 前進度・オフサイドライン超過量・相手DFとの到達時間差を単一のスコアで同時に評価する。
+       * 方式E（統一スコアリング。`specification/features_positioning_redesign.md`）。
+       * 「ある地点がパスを受ける/そこへ動く価値としてどれだけ良いか」を単一のスコア関数
+       * （`scoreReceivingSpot`、`src/game/player.ts`）で評価し、`selectPassReceiver`（誰に
+       * パスするか）と `computeTargetPosition`（どこへ動くか）の両方がこれを共有する。
+       * 方式A〜Dは「安全な位置を計算する側」だけを改善しており、「受け手を選ぶ側」
+       * （旧: `marked ? -1000 : 0) - distToGoal`）とは無関係に動いていたため、位置取りを
+       * 改善しても自然なオフサイド率が下がりきらなかった。この断絶を解消する。
        */
       kpp: {
         /** 前進度（0〜1、maxDistanceに対する比率）への報酬の重み。大きいほど積極的に前へ出る。 */
         forwardWeight: number;
         /** オフサイドラインを超過した距離[m]あたりのペナルティの重み。 */
         offsideOvershootWeight: number;
-        /** 相手DF最速到達者に対する到達時間の遅れ[秒]（`arrivalSafetyMarginSeconds`超過分）あたりのペナルティの重み。 */
+        /**
+         * 相手DF最速到達者に対する到達時間の遅れ[秒]（`arrivalSafetyMarginSeconds`超過分）
+         * あたりのペナルティの重み。`computeTargetPosition`（自分がそこへ動けるか）にのみ
+         * 使う個人固有の項のため、共有スコア関数 `scoreReceivingSpot` には含めない。
+         */
         arrivalDeficitWeight: number;
+        /**
+         * 最も近い敵選手が `tackleDistance * markedRadiusFactor` より近づいた分[m]あたりの
+         * ペナルティの重み（旧: binaryな `marked` フラグを連続値化したもの）。
+         */
+        markingWeight: number;
       };
     };
   };
