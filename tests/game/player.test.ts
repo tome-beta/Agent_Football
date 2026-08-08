@@ -489,7 +489,15 @@ describe("decideAction: positioning force composition (milestone H)", () => {
       const state = createInitialState(config);
       const defender = state.teams.A.players.find((p) => p.role === "DF")!;
       const opponent = state.teams.B.players.find((p) => p.role === "FW")!;
-      for (const p of state.teams.A.players) if (p.id !== defender.id) p.pos = { x: 1000, y: 1000 };
+      // defender 自身が最終ライン（自ゴールに最も近い選手）だと lastManPressSuppression が
+      // 効いてプレス力そのものが潰れ、aggressiveness の差を見るこのテストの意図と衝突する。
+      // 味方1人を defender よりさらに自ゴール寄りに置き、最終ライン判定から外す。
+      let placedDeeper = false;
+      for (const p of state.teams.A.players) {
+        if (p.id === defender.id) continue;
+        p.pos = placedDeeper ? { x: 1000, y: 1000 } : { x: -5, y: -30 };
+        placedDeeper = true;
+      }
 
       defender.params = { ...defender.params, aggressiveness };
       defender.pos = { x: 5, y: -10 };

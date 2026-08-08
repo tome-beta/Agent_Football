@@ -301,6 +301,18 @@ function selectReceivingDistance(
   return bestD;
 }
 
+/**
+ * player が自チームの中で最も自ゴールに近い（＝最終ラインを担う）選手かどうか。
+ * role では判定しない — 局面によって FW が最も下がっていることもあれば DF が
+ * 押し上げていることもあり、その時々の実位置で「最後尾」が入れ替わる方が自然。
+ * 同点（距離が等しい）の場合は両者とも最後尾扱いにする（片方だけ詰め寄りを許すと
+ * 抑制の意味が薄れるため）。
+ */
+function isLastManBack(player: Player, myTeam: Team, own: Vec2): boolean {
+  const myDist = distance(player.pos, own);
+  return myTeam.players.every((m) => m.id === player.id || distance(m.pos, own) >= myDist);
+}
+
 /** candidates の中から point に最も近い選手の位置を返す。 */
 function nearestPosTo(point: Vec2, candidates: Player[]): Vec2 | undefined {
   let nearest: Vec2 | undefined;
@@ -431,15 +443,45 @@ function computeTargetPosition(player: Player, state: GameState, config: GameCon
       target = add(target, scale(sub(projected, target), p.coverWeight));
     }
 
+    // ゴール前カバーは coverWeight により全員が「ボール-自ゴール中心」の同一線上に
+    // 収束するため、ボールが自陣深くまで来ても中央1点に団子化してポストが空きがちだった
+    // （ユーザー指摘、2026-08-08）。ボールが goalCoverDangerDistance 圏内に入ったら、
+    // home.x の符号・大きさ（DF=中央/MF=左寄り/FW=右寄り、features_1のフォーメーション比率）
+    // に応じてゴール幅方向へ広がるよう横方向にオフセットし、簡易的な「壁」を作る。
+    // 役割で分岐せず home.x という連続値だけを使うため、フォーメーションを変えれば
+    // 広がり方も自然に追従する。
+    const distToOwnGoal = distance(ball.pos, own);
+    const danger = Math.max(0, Math.min(1, 1 - distToOwnGoal / p.goalCoverDangerDistance));
+    if (danger > 0) {
+      // 上のcoverWeight射影は「ホームからidealFollowDist以内でボールへ寄った点」を線に
+      // 投影するだけなので、ホームが浅い選手（MF/FW）は危険度が上がっても射影先(t)が
+      // ゴール寄りに寄り切らず、自ゴールへの戻りが途中で頭打ちになっていた
+      // （ユーザー指摘、2026-08-08。攻め上がった選手のリカバリーを再現するテストで確認）。
+      // 危険度に比例して target.y を own.y へ直接引き寄せることで、コース射影の限界に
+      // 関係なく確実にゴール方向へ戻る力を保証する。
+      target.y += (own.y - target.y) * danger * p.goalRecallWeight;
+      if (Math.abs(home.x) > 1e-6) {
+        target.x += Math.sign(home.x) * p.goalMouthSpreadDistance * danger;
+      }
+    }
+
     const dCarrier = distance(player.pos, carrier.pos);
     if (dCarrier <= p.pressDistance) {
       // 詰め寄るかどうかは役割ではなく aggressiveness に応じた確率で毎ターン決める。
       // これにより同じ場面でも選手の反応が毎回変わり、かつ aggressiveness が高い選手ほど
       // 積極的に前へ出る傾向がにじみ出る（features_1/開発メモの「役割分岐にしない」方針に沿う）。
-      const pressChance = Math.max(
+      let pressChance = Math.max(
         0,
         Math.min(1, p.pressChanceBase + (player.params.aggressiveness - 0.5) * p.pressChanceSpread)
       );
+      // pressDistance がピッチ規模に対して広いため、3人全員が同時に詰め寄り候補になり
+      // ゴール前のカバーが誰もいなくなる場面が頻発していた（ユーザー指摘、2026-08-08）。
+      // 最も自ゴールに近い選手（＝その瞬間の最終ライン）だけはプレスを抑制し、カバー
+      // リング位置に留まりやすくする。役割固定ではなく毎ターンの実位置で判定するため、
+      // 誰が最終ラインを担うかは局面に応じて入れ替わる。
+      if (isLastManBack(player, myTeam, own)) {
+        pressChance *= p.lastManPressSuppression;
+      }
       if (chance(state, pressChance)) {
         const strength = p.pressWeight * player.params.aggressiveness;
         target = add(target, scale(sub(computeApproachPoint(player, carrier, myTeam, own, p), target), strength));

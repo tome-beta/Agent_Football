@@ -73,6 +73,10 @@ export const defaultConfig: GameConfig = {
       surroundRadius: 2.5, // 複数人で詰め寄るとき、敵保持者を囲むリングの半径 [m]
       pressChanceBase: 0.5, // aggressiveness=0.5 の選手が毎ターン実際に詰め寄る確率
       pressChanceSpread: 1.0, // aggressiveness の偏差1あたりの確率変化幅
+      lastManPressSuppression: 0.2, // 最終ライン（自ゴールに最も近い選手）のpressChanceに掛ける係数
+      goalCoverDangerDistance: 20, // この距離[m]以内でゴール前カバーの横方向オフセットが効き始める
+      goalMouthSpreadDistance: 3, // 危険ゾーン内でhome.xの符号方向へずらす最大距離[m]（goalWidth 7.32の半分弱）
+      goalRecallWeight: 0.6, // 危険ゾーン内でtarget.yをown.yへ直接引き寄せる強さ（dangerと掛け合わせる）
       receivingDistanceFactor: 0.6, // 受け手ポジションの距離 = passDistance * この係数
       markerAvoidRangeFactor: 0.5, // マーカー回避判定の範囲 = passDistance * この係数
       markerAvoidStepDistance: 3, // マーカー回避時に横へずれる距離 [m]
