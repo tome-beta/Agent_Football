@@ -238,6 +238,33 @@ export interface GameConfig {
       pressChanceBase: number;
       /** pressChanceBase から aggressiveness の偏差1あたりどれだけ確率を振るか（+/-方向）。 */
       pressChanceSpread: number;
+      /**
+       * その瞬間、自チームの中で最も自ゴールに近い選手（＝最終ライン）の pressChance に
+       * 掛ける係数（0〜1）。1なら抑制なし、0なら最終ラインの選手は絶対に詰め寄らない。
+       * pressDistance がピッチ規模に対して広く、抑制がないと守備側全員が同時にボールへ
+       * 詰め寄ってゴール前が空になる場面が頻発していたため導入（ユーザー指摘、2026-08-08）。
+       */
+      lastManPressSuppression: number;
+      /**
+       * ボールが自ゴールからこの距離 [m] 以内に入ったら「ゴール前カバー」の横方向オフセット
+       * （goalMouthSpreadDistance）を効かせ始める。近づくほど danger（0〜1）が1に近づき
+       * オフセットが強く効く。
+       */
+      goalCoverDangerDistance: number;
+      /**
+       * 危険ゾーン内（danger=1）で home.x の符号方向へゴール幅カバーのために横にずらす
+       * 最大距離 [m]。coverWeight による「ボール-自ゴール線上への収束」だけだと全員が
+       * 中央1点に団子化しポストが空くため、home.x（役割ごとの左右オフセット）の符号を
+       * 使って簡易的に壁を広げる（ユーザー指摘、2026-08-08）。
+       */
+      goalMouthSpreadDistance: number;
+      /**
+       * 危険ゾーン内（danger 0〜1）で target.y を own.y（自ゴール）へ直接引き寄せる強さ
+       * （0〜1のブレンド率、danger と掛け合わせる）。coverWeight によるライン射影だけでは
+       * ホームが浅い選手（MF/FW）の戻りが途中で頭打ちになるため、危険度に比例した
+       * 直接的な引き戻しを別途保証する（ユーザー指摘、2026-08-08）。
+       */
+      goalRecallWeight: number;
       /** 受け手ポジション（ボールから攻撃ゴール方向）の距離を passDistance の何倍とするか。 */
       receivingDistanceFactor: number;
       /** 受け手ポジション付近の敵マーカーを回避判定する範囲を passDistance の何倍とするか。 */
