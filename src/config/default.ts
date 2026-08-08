@@ -65,6 +65,11 @@ export const defaultConfig: GameConfig = {
       receivingDistanceFactor: 0.6, // 受け手ポジションの距離 = passDistance * この係数
       markerAvoidRangeFactor: 0.5, // マーカー回避判定の範囲 = passDistance * この係数
       markerAvoidStepDistance: 3, // マーカー回避時に横へずれる距離 [m]
+      // 0/0.05/0.1/0.15/0.2/0.3/0.5 を20試合ずつ比較（balance-check、2026-08-08）。
+      // 0.2までは平均得点5.10前後を維持するが、0.3で0.55、0.5で0.00（全試合引き分け）まで
+      // 急落する非線形な閾値を発見した。安全マージンを見て閾値からやや離れた0.15を採用
+      // （平均得点5.20、勝敗分布も無効時に近い）。
+      receivingHomeBlendY: 0.15, // 受け手ポジションのyをhomePos.yとブレンドする比率
     },
     offside: {
       // ステップ2（反則としてのターンオーバー処理、Ball.offsideOffenderId/handleOffside）を

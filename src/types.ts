@@ -202,6 +202,15 @@ export interface GameConfig {
       markerAvoidRangeFactor: number;
       /** マーカー回避時に横へずれる距離 [m]。 */
       markerAvoidStepDistance: number;
+      /**
+       * 受け手ポジションのy座標を homePos.y とブレンドする比率（0〜1）。x は昔から home.x と
+       * 50/50でブレンドしていたが、yはボール基準の受け手候補地点（openSpot.y）をそのまま採用
+       * していたため、非保持の選手全員が「ボールと同じ前進距離・同じ高さ」に並んでしまい、
+       * 役割によらず常に同じ横一列の陣形に見える問題があった（ユーザー指摘、2026-08-08）。
+       * 値を上げすぎると（0.3以上）受け手が前進しなくなり得点が壊滅する非線形な閾値があるため
+       * 小さめの値に留める（詳細は `src/config/default.ts` のコメント参照）。
+       */
+      receivingHomeBlendY: number;
     };
     /** オフサイド判定（ステップ1: AI回避のみ。反則としてのターンオーバー処理は未実装）。 */
     offside: {

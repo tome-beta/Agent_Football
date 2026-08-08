@@ -403,7 +403,16 @@ function computeTargetPosition(player: Player, state: GameState, config: GameCon
         openSpot = add(base, scale(normalize(awayFromMarker), p.markerAvoidStepDistance));
       }
     }
-    target = { x: (openSpot.x + home.x) / 2, y: openSpot.y };
+    // x同様にyもhomeと少しブレンドする。以前はyをopenSpotのまま採用していたため、ボール保持中の
+    // 非保持選手が全員「ボールから同じ前進距離だけ進んだ同じ高さ」に並び、役割に関わらず
+    // 常に同じ横一列の陣形に見えてしまっていた（ユーザー指摘、2026-08-08）。receivingHomeBlendY
+    // の比率だけhomeへ寄せることで、DF役割（home が自ゴール寄り）は上がりすぎず、FW役割は
+    // 高い位置を取るという役割ごとの差がにじみ出るようにする（xのような50/50ブレンドだと
+    // 前進が阻害され得点が壊滅する非線形な閾値があったため、小さめの比率に留めている）。
+    target = {
+      x: (openSpot.x + home.x) / 2,
+      y: openSpot.y * (1 - p.receivingHomeBlendY) + home.y * p.receivingHomeBlendY,
+    };
   }
 
   for (const mate of myTeam.players) {
