@@ -223,6 +223,18 @@ export interface GameConfig {
        * 小さめの値に留める（詳細は `src/config/default.ts` のコメント参照）。
        */
       receivingHomeBlendY: number;
+      /**
+       * 味方保持中、受け手ポジションではなくボールより後方の「バックパス受け」を
+       * 目指す基準確率（aggressiveness = 0.5 のときの確率）。役割分岐ではなく
+       * aggressiveness の低さ（＝運ぶより繋ぎたい選手）がそのまま確率の差になる。
+       * 前進した支援ポジションしか候補が生まれない構造だと、保持者が孤立していても
+       * バックパスという選択肢自体が存在しなかった（ユーザー指摘、2026-08-08）。
+       */
+      backSupportChanceBase: number;
+      /** aggressiveness の偏差1あたりバックサポート確率をどれだけ振るか（低いほど後方支援に回りやすい）。 */
+      backSupportAggroSpread: number;
+      /** バックサポート位置の、ボールから自ゴール方向への距離を passDistance の何倍とするか。 */
+      backSupportDistanceFactor: number;
     };
     /** オフサイド判定（ステップ1: AI回避のみ。反則としてのターンオーバー処理は未実装）。 */
     offside: {

@@ -75,6 +75,9 @@ export const defaultConfig: GameConfig = {
       // 急落する非線形な閾値を発見した。安全マージンを見て閾値からやや離れた0.15を採用
       // （平均得点5.20、勝敗分布も無効時に近い）。
       receivingHomeBlendY: 0.15, // 受け手ポジションのyをhomePos.yとブレンドする比率
+      backSupportChanceBase: 0.15, // aggressiveness=0.5の選手が毎ターンバックサポートを選ぶ基準確率
+      backSupportAggroSpread: 0.5, // aggressivenessの偏差1あたりの確率変化幅（低いほど後方支援に回りやすい）
+      backSupportDistanceFactor: 0.5, // バックサポート位置の距離 = passDistance * この係数
     },
     offside: {
       // ステップ2（反則としてのターンオーバー処理、Ball.offsideOffenderId/handleOffside）を

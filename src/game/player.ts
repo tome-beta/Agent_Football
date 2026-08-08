@@ -333,6 +333,56 @@ function computeApproachPoint(
   };
 }
 
+/** 味方が minSpacing 未満に近づいていれば離れる方向へ target を補正する。 */
+function applyTeammateRepulsion(player: Player, target: Vec2, myTeam: Team, p: GameConfig["ai"]["positioning"]): Vec2 {
+  let result = target;
+  for (const mate of myTeam.players) {
+    if (mate.id === player.id) continue;
+    const d = distance(player.pos, mate.pos);
+    if (d < p.minSpacing) {
+      const away = sub(player.pos, mate.pos);
+      if (length(away) > 1e-6) {
+        const strength = ((p.minSpacing - d) / p.minSpacing) * p.repulsionWeight;
+        result = add(result, scale(normalize(away), strength));
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * バックサポート位置: ボールから自ゴール方向へ backSupportDistanceFactor 分だけ下がった地点。
+ * 受け手ポジション（前方）と同じくマーカー回避・home とのxブレンドを行うが、ゴール方向とは
+ * 逆向きに使うだけで、ロジックの骨格は selectReceivingDistance 側の base 計算と対称にしている。
+ */
+function computeBackSupportTarget(
+  player: Player,
+  home: Vec2,
+  ballPos: Vec2,
+  own: Vec2,
+  oppTeam: Team,
+  config: GameConfig
+): Vec2 {
+  const p = config.ai.positioning;
+  const towardOwnGoalDir = normalize(sub(own, ballPos));
+  const backDistance = config.ai.passDistance * p.backSupportDistanceFactor;
+  const base = length(towardOwnGoalDir) < 1e-6 ? home : add(ballPos, scale(towardOwnGoalDir, backDistance));
+
+  const markerRange = config.ai.passDistance * p.markerAvoidRangeFactor;
+  const marker = nearestPosTo(base, oppTeam.players);
+  let openSpot = base;
+  if (marker !== undefined && distance(base, marker) < markerRange) {
+    const awayFromMarker = sub(base, marker);
+    if (length(awayFromMarker) > 1e-6) {
+      openSpot = add(base, scale(normalize(awayFromMarker), p.markerAvoidStepDistance));
+    }
+  }
+  return {
+    x: (openSpot.x + home.x) / 2,
+    y: openSpot.y * (1 - p.receivingHomeBlendY) + home.y * p.receivingHomeBlendY,
+  };
+}
+
 /**
  * 非保持の選手が目指す目標位置を、複数の「力」を合成して決める（マイルストーンH）。
  * 役割（FW/MF/DF）による分岐は書かず、`homePos`/`params` の違いが結果ににじみ出るようにする。
@@ -387,6 +437,22 @@ function computeTargetPosition(player: Player, state: GameState, config: GameCon
     }
   } else {
     const goal = attackGoal(player.team, config);
+
+    // 味方保持中/フリーボール時、受け手ポジションは常にボールより前方にしか生まれない
+    // 構造だと、保持者が孤立していてもバックパスという選択肢自体が存在しなかった
+    // （ユーザー指摘、2026-08-08）。aggressiveness が低い選手ほど、前進した受け手位置
+    // ではなくボールより自ゴール側の「バックサポート」位置を目指す確率を毎ターン振り、
+    // 役割分岐ではなくパラメータの違いがそのまま前方/後方志向の差ににじみ出るようにする。
+    const backSupportChance = Math.max(
+      0,
+      Math.min(1, p.backSupportChanceBase - (player.params.aggressiveness - 0.5) * p.backSupportAggroSpread)
+    );
+    if (chance(state, backSupportChance)) {
+      target = computeBackSupportTarget(player, home, ball.pos, own, oppTeam, config);
+      target = applyTeammateRepulsion(player, target, myTeam, p);
+      return target;
+    }
+
     const towardGoalDir = normalize(sub(goal, ball.pos));
     let receivingDistance = config.ai.passDistance * p.receivingDistanceFactor;
     // 受け手ポジションの前進距離を「ボールからゴールまでの残り距離」の一定割合でも頭打ちにする
@@ -423,19 +489,7 @@ function computeTargetPosition(player: Player, state: GameState, config: GameCon
     };
   }
 
-  for (const mate of myTeam.players) {
-    if (mate.id === player.id) continue;
-    const d = distance(player.pos, mate.pos);
-    if (d < p.minSpacing) {
-      const away = sub(player.pos, mate.pos);
-      if (length(away) > 1e-6) {
-        const strength = ((p.minSpacing - d) / p.minSpacing) * p.repulsionWeight;
-        target = add(target, scale(normalize(away), strength));
-      }
-    }
-  }
-
-  return target;
+  return applyTeammateRepulsion(player, target, myTeam, p);
 }
 
 function decideDefensiveAction(player: Player, state: GameState, config: GameConfig): void {
