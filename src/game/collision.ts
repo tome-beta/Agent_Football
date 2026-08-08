@@ -32,6 +32,7 @@ export function resolvePlayerBall(player: Player, ball: Ball, config: GameConfig
   if (ball.possessorId === player.id) {
     ball.pos = { ...player.pos };
     ball.vel = { ...player.vel };
+    ball.possessionTurns += 1;
     return true;
   }
 
@@ -47,6 +48,7 @@ export function resolvePlayerBall(player: Player, ball: Ball, config: GameConfig
   ball.possessorId = player.id;
   ball.pos = { ...player.pos };
   ball.vel = { ...player.vel };
+  ball.possessionTurns = 0;
   return true;
 }
 
@@ -107,6 +109,7 @@ export function resolveBallPossession(
     ball.possessorId = stealer.id;
     ball.pos = { ...stealer.pos };
     ball.vel = { x: 0, y: 0 };
+    ball.possessionTurns = 0;
     return;
   }
 
@@ -133,6 +136,7 @@ export function resolveBallPossession(
           ball.possessorId = interceptor.id;
           ball.pos = { ...interceptor.pos };
           ball.vel = { x: 0, y: 0 };
+          ball.possessionTurns = 0;
           return;
         }
       }

@@ -204,7 +204,16 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
     }
   }
 
-  const receiver = selectPassReceiver(player, state, config);
+  // ボールを受け取った直後の数ターンはパス判断自体を行わず、必ずドリブル継続にする。
+  // これがないと毎フレーム独立にパス判定をやり直すため、受け取った1フレーム目で
+  // いきなりパスしてしまい、ドリブルではなく「自分にパスして自分で拾う」ような
+  // 一瞬の保持に見えていた（ユーザー指摘、2026-08-08）。aggressiveness が高い選手ほど
+  // 長く持ち運びたがる形にする。
+  const minHoldTurns = Math.max(
+    0,
+    config.ai.minHoldTurnsBase + (player.params.aggressiveness - 0.5) * config.ai.minHoldTurnsAggroSpread
+  );
+  const receiver = ball.possessionTurns < minHoldTurns ? undefined : selectPassReceiver(player, state, config);
   if (receiver !== undefined) {
     // 受け手がいても、役割ではなく aggressiveness/vision に応じた確率であえてドリブルを選ぶことがある。
     // aggressiveness が高いほど自分で運びたがり、vision が広いほど受け手を見つけやすくパスを選びやすい。

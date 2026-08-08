@@ -10,6 +10,7 @@ export function createBall(): Ball {
     possessorId: null,
     lastKickerId: null,
     offsideOffenderId: null,
+    possessionTurns: 0,
   };
 }
 
@@ -57,4 +58,5 @@ export function kickBall(ball: Ball, dir: Vec2, power: number, kickerId: string)
   ball.status = "Free";
   ball.possessorId = null;
   ball.lastKickerId = kickerId;
+  ball.possessionTurns = 0;
 }

@@ -45,6 +45,7 @@ describe("decideAction: possession", () => {
     state.ball.pos = { ...passer.pos };
     state.ball.status = "Possessed";
     state.ball.possessorId = passer.id;
+    state.ball.possessionTurns = 999;
 
     config.ai.shootProbability = 0; // シュートさせない
 
@@ -70,6 +71,7 @@ describe("decideAction: possession", () => {
     state.ball.pos = { ...passer.pos };
     state.ball.status = "Possessed";
     state.ball.possessorId = passer.id;
+    state.ball.possessionTurns = 999;
 
     config.ai.shootProbability = 0;
 
@@ -100,6 +102,7 @@ describe("decideAction: possession", () => {
     state.ball.pos = { ...passer.pos };
     state.ball.status = "Possessed";
     state.ball.possessorId = passer.id;
+    state.ball.possessionTurns = 999;
 
     decideAction(passer, state, config);
 
@@ -131,6 +134,7 @@ describe("decideAction: possession", () => {
     state.ball.pos = { ...passer.pos };
     state.ball.status = "Possessed";
     state.ball.possessorId = passer.id;
+    state.ball.possessionTurns = 999;
 
     decideAction(passer, state, config);
 
@@ -151,6 +155,7 @@ describe("decideAction: possession", () => {
     state.ball.pos = { ...passer.pos };
     state.ball.status = "Possessed";
     state.ball.possessorId = passer.id;
+    state.ball.possessionTurns = 999;
 
     config.ai.shootProbability = 0;
 

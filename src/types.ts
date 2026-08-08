@@ -53,6 +53,13 @@ export interface Ball {
    * 成立し、それ以外の選手が触れたら不成立としてフラグだけ消える（`specification/features_offside.md` ステップ2）。
    */
   offsideOffenderId: string | null;
+  /**
+   * 現在の保持者が何ターン連続でボールを保持しているか。保持者が変わるたび0にリセットする。
+   * `decidePossessionAction` が「受け取った直後の1フレーム目でいきなりパスしてしまい、
+   * ドリブルではなく自分パス＆即拾いに見える」問題を避けるための保持クールダウン判定に使う
+   * （ユーザー指摘、2026-08-08）。
+   */
+  possessionTurns: number;
 }
 
 export type MatchPhase =
@@ -161,6 +168,15 @@ export interface GameConfig {
     dribbleChanceAggroSpread: number;
     /** vision の偏差（vision/180を基準に0.5からの差）1あたりドリブル確率をどれだけ下げるか（視野が広いほど受け手を見つけやすい）。 */
     dribbleChanceVisionSpread: number;
+    /**
+     * ボールを受け取ってから最低何ターン連続保持するまでパス/シュート判断そのものを
+     * 行わず、必ずドリブル継続にするか（aggressiveness = 0.5 のときの基準値）。0だと
+     * 従来通り受け取った1フレーム目からパス判定する。役割分岐ではなく aggressiveness が
+     * 高い選手ほど長く持ち運びたがる形にする。
+     */
+    minHoldTurnsBase: number;
+    /** aggressiveness の偏差1あたり minHoldTurnsBase をどれだけ振るか（高いほど長く持つ）。 */
+    minHoldTurnsAggroSpread: number;
     /** この距離 [m] 未満まで近づいたら目標地点に到達したとみなし、移動を止める（moveToward）。 */
     moveStopThreshold: number;
     /** パス初速に、パス距離 [m] 1mあたり何 m/s 上乗せするか。 */
