@@ -301,7 +301,7 @@ describe("stepMatch", () => {
   it("calls a foul when the flagged offside offender receives the ball, resetting to the opponent at the ball's spot", () => {
     // デフォルトは無効化しているため個別テストで有効化する。
     const config = loadConfig();
-    config.ai.offside.enabled = true;
+    config.ai.offside.enforcementEnabled = true;
     const state = createInitialState(config);
     state.phase = "PLAYING";
     const offender = state.teams.A.players[0];
@@ -322,7 +322,7 @@ describe("stepMatch", () => {
 
   it("clears the offside flag without a foul when a different player touches the ball first", () => {
     const config = loadConfig();
-    config.ai.offside.enabled = true;
+    config.ai.offside.enforcementEnabled = true;
     const state = createInitialState(config);
     state.phase = "PLAYING";
     const offender = state.teams.A.players[0];

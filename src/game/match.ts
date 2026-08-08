@@ -109,7 +109,7 @@ function checkGoal(state: GameState, pitch: Pitch): boolean {
  */
 function handleOffside(state: GameState, config: GameConfig): boolean {
   const { ball } = state;
-  if (!config.ai.offside.enabled || ball.offsideOffenderId === null) return false;
+  if (!config.ai.offside.enforcementEnabled || ball.offsideOffenderId === null) return false;
   if (ball.status !== "Possessed") return false;
 
   if (ball.possessorId !== ball.offsideOffenderId) {

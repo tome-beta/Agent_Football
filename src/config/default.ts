@@ -82,14 +82,23 @@ export const defaultConfig: GameConfig = {
       backSupportDistanceFactor: 0.5, // バックサポート位置の距離 = passDistance * この係数
     },
     offside: {
+      // ステップ1（AI回避）を有効化すると selectPassReceiver/computeTargetPosition
+      // 両方が方式Eスコアリングに切り替わる。露骨にオフサイドの選手へパスを出す見た目の
+      // 不自然さ（ユーザー指摘、2026-08-08）を直す狙いで avoidanceEnabled=true を試したが、
+      // computeTargetPosition側（受け手の位置取り）が絡むと前進そのものが止まり、
+      // 10シードのbalance-checkで平均得点0.00（全試合0-0）という致命的な崩壊を確認した
+      // （forwardReachFraction を外しても症状は変わらず、既知の「自然なオフサイド率
+      // 59〜68%」問題より深刻）。selectPassReceiverの受け手選定だけを直す軽量な対策が
+      // 別途必要なため、一旦 false に戻す。詳細は 2026-08-08 のやり取り参照。
+      avoidanceEnabled: false,
       // ステップ2（反則としてのターンオーバー処理、Ball.offsideOffenderId/handleOffside）を
       // 2026-08-05 に実装したが、方式A・C導入後も自然なオフサイド率が59%と高いままのため、
       // 20シードのbalance-checkで平均得点が導入前の約4.6点/試合→0.45点/試合まで急落する
-      // 再現性のある破滅的偏りを確認した（マイルストーンJ・2026-08-03の再現）。
-      // このフラグはステップ1（AI回避）とステップ2（反則）をまとめてオン/オフするため、
-      // 一旦 false にして無効化している。再挑戦には受け手ポジショニングのさらなる改善
-      // （方式D等、自然なオフサイド率20%未満が目安）が前提。詳細: specification/features_offside.md
-      enabled: false,
+      // 再現性のある破滅的偏りを確認した（マイルストーンJ・2026-08-03の再現）。バックパス・
+      // 保持クールダウン追加後の2026-08-08再検証でも15試合で総得点0まで悪化することを確認。
+      // 再挑戦には受け手ポジショニングのさらなる改善（方式D等、自然なオフサイド率20%未満が
+      // 目安）が前提。詳細: specification/features_offside.md
+      enforcementEnabled: false,
       lineToleranceMeters: 0.5, // 同一ラインとみなす許容誤差 [m]
       // 0.05/0.1/0.15/0.2/0.3/0.5/0.6/0.8/1.0 を比較。0.2以下は逆に悪化する
       // （オフサイド率75%超・平均得点も低下）。0.3が最良の組み合わせ（自然な

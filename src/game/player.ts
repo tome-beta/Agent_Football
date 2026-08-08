@@ -168,7 +168,7 @@ function selectPassReceiver(player: Player, state: GameState, config: GameConfig
   for (const candidate of candidates) {
     // enabled時は方式Eの統一スコアを使う。無効時は既存の marked/distToGoal 式のままにし、
     // デフォルトのゲームバランス（オフサイド機能オフ時の挙動）を変えない。
-    const score = config.ai.offside.enabled
+    const score = config.ai.offside.avoidanceEnabled
       ? scoreReceivingSpot(candidate.pos, player.team, player.pos, oppTeam, config)
       : (() => {
           const marked = oppTeam.players.some(
@@ -235,7 +235,7 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
       // 反則判定用にフラグを立てる（ball.offsideOffenderId、ステップ2）。
       const oppTeam = state.teams[opposite(player.team)];
       ball.offsideOffenderId =
-        config.ai.offside.enabled && isOffside(receiver.pos, player.team, oppTeam, player.pos, config)
+        config.ai.offside.avoidanceEnabled && isOffside(receiver.pos, player.team, oppTeam, player.pos, config)
           ? receiver.id
           : null;
       kickBall(ball, dir, power, player.id);
@@ -467,7 +467,7 @@ function computeTargetPosition(player: Player, state: GameState, config: GameCon
     // 受け手ポジションの前進距離を「ボールからゴールまでの残り距離」の一定割合でも頭打ちにする
     // （方式A: features_positioning_redesign.md）。相手の実位置を一切参照しないため、相手の
     // 守備ポジショニングと相互に反応し合うフィードバックループが構造的に発生しない。
-    if (config.ai.offside.enabled) {
+    if (config.ai.offside.avoidanceEnabled) {
       const remainingToGoal = distance(ball.pos, goal);
       const maxForward = Math.min(receivingDistance, remainingToGoal * config.ai.offside.forwardReachFraction);
       // 方式Aの上限内で、前進度・オフサイドライン超過量・相手DFとの到達時間差を

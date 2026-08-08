@@ -252,10 +252,24 @@ export interface GameConfig {
       /** バックサポート位置の、ボールから自ゴール方向への距離を passDistance の何倍とするか。 */
       backSupportDistanceFactor: number;
     };
-    /** オフサイド判定（ステップ1: AI回避のみ。反則としてのターンオーバー処理は未実装）。 */
+    /** オフサイド判定（ステップ1: AI回避。ステップ2: 反則としてのターンオーバー処理）。 */
     offside: {
-      /** オフサイド判定を有効にするか。既存試合バランスとの比較用スイッチ。 */
-      enabled: boolean;
+      /**
+       * 受け手選定・受け手ポジショニングでオフサイドを回避しようとするか（ステップ1）。
+       * 反則としてのターンオーバー（enforcementEnabled）とは独立に切り替えられる。
+       * これが無効だと selectPassReceiver/computeTargetPosition が一切オフサイドを
+       * 考慮せず、露骨にオフサイドの選手へパスを出してしまう（ユーザー指摘、2026-08-08）。
+       */
+      avoidanceEnabled: boolean;
+      /**
+       * オフサイドの反則を実際にターンオーバー（相手ボールに）として扱うか（ステップ2）。
+       * avoidanceEnabled を有効にしても自然なオフサイド率は59〜68%と高く（詳細:
+       * specification/features_positioning_redesign.md）、これを true にすると
+       * 頻繁な反則停止で試合展開が崩れ平均得点がほぼ0まで崩壊することを確認済み
+       * （2026-08-08 balance-check、15試合で総得点0）。受け手ポジショニングの
+       * さらなる改善（自然なオフサイド率20%未満が目安）が前提のため、一旦 false のまま。
+       */
+      enforcementEnabled: boolean;
       /** 同一ラインとみなす許容誤差 [m]。 */
       lineToleranceMeters: number;
       /**

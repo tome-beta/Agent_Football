@@ -83,7 +83,7 @@ describe("decideAction: possession", () => {
 
   it("prefers an onside teammate over an offside one (方式E: 統一スコアリング)", () => {
     const config = loadConfig();
-    config.ai.offside.enabled = true; // デフォルトは無効化しているため個別テストで有効化する
+    config.ai.offside.avoidanceEnabled = true; // デフォルトは無効化しているため個別テストで有効化する
     config.ai.shootProbability = 0;
     // ドリブル継続を選ばせず必ずパスさせる（確率0を保証するため偏差項も0にする）。
     config.ai.dribbleChanceBase = 0;
@@ -114,7 +114,7 @@ describe("decideAction: possession", () => {
 
   it("still passes to the sole candidate even when it is offside (ソフトペナルティであり完全排除ではない)", () => {
     const config = loadConfig();
-    config.ai.offside.enabled = true; // デフォルトは無効化しているため個別テストで有効化する
+    config.ai.offside.avoidanceEnabled = true; // デフォルトは無効化しているため個別テストで有効化する
     config.ai.shootProbability = 0;
     // ドリブル継続を選ばせず必ずパスさせる（確率0を保証するため偏差項も0にする）。
     config.ai.dribbleChanceBase = 0;
@@ -145,7 +145,7 @@ describe("decideAction: possession", () => {
 
   it("does not flag ball.offsideOffenderId when the receiver is onside", () => {
     const config = loadConfig({ random: { seed: 1 } });
-    config.ai.offside.enabled = true; // デフォルトは無効化しているため個別テストで有効化する
+    config.ai.offside.avoidanceEnabled = true; // デフォルトは無効化しているため個別テストで有効化する
     const state = createInitialState(config);
     const passer = state.teams.A.players.find((p) => p.role === "MF")!;
     const receiver = state.teams.A.players.find((p) => p.role === "FW")!;
@@ -341,7 +341,7 @@ describe("decideAction: non-possessor", () => {
 
   it("caps the receiving-position forward reach by remaining distance to goal (positioning redesign method A)", () => {
     const config = loadConfig({ random: { seed: 1 } });
-    config.ai.offside.enabled = true; // デフォルトは無効化しているため個別テストで有効化する
+    config.ai.offside.avoidanceEnabled = true; // デフォルトは無効化しているため個別テストで有効化する
 
     function settledSupporterY(forwardReachFraction: number): number {
       config.ai.offside.forwardReachFraction = forwardReachFraction;
@@ -374,7 +374,7 @@ describe("decideAction: non-possessor", () => {
 
   it("shortens the safe forward distance when a defender guards the receiving spot (positioning redesign method C)", () => {
     const config = loadConfig({ random: { seed: 1 } });
-    config.ai.offside.enabled = true; // デフォルトは無効化しているため個別テストで有効化する
+    config.ai.offside.avoidanceEnabled = true; // デフォルトは無効化しているため個別テストで有効化する
     config.ai.positioning.markerAvoidRangeFactor = 0; // マーカー回避を無効化し、方式Cの効果だけを見る
     config.ai.offside.forwardReachFraction = 1; // 方式Aの上限が効かないようにする
 
