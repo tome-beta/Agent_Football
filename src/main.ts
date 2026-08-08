@@ -94,9 +94,10 @@ function main() {
   const canvasElement = document.getElementById("game") as HTMLCanvasElement | null;
   const roleGroupsRoot = document.getElementById("role-groups");
   const toggleBtn = document.getElementById("toggleBtn") as HTMLButtonElement | null;
+  const speedBtn = document.getElementById("speedBtn") as HTMLButtonElement | null;
   const restartBtn = document.getElementById("restartBtn") as HTMLButtonElement | null;
   const debugVisionToggle = document.getElementById("debugVisionToggle") as HTMLInputElement | null;
-  if (!canvasElement || !roleGroupsRoot || !toggleBtn || !restartBtn || !debugVisionToggle) {
+  if (!canvasElement || !roleGroupsRoot || !toggleBtn || !speedBtn || !restartBtn || !debugVisionToggle) {
     throw new Error("Required DOM elements not found");
   }
 
@@ -110,6 +111,11 @@ function main() {
   // requestAnimationFrame の連鎖が現在生きているか。MATCH_END で連鎖が止まるので、
   // 再スタート時にもう一度動かす必要があるかどうかの判定に使う。
   let loopAlive = false;
+  // 1ターン = physics.dt(0.1秒) をrAF(約60fps)毎に1回進めると、体感速度が6倍速相当になり
+  // 速すぎるため、速度倍率を導入する（デフォルト1倍、ボタンで0.5倍に切り替え）。
+  // rAFの発火間隔を変えるのではなく、進めるターン数を間引くことで実装する。
+  let speedMultiplier = 1;
+  let stepAccumulator = 0;
 
   // rAF の連鎖自体は一時停止中も止めない。running フラグで simulator.step() の
   // 実行だけを止めることで、一時停止/再開の反映タイミングが requestAnimationFrame の
@@ -117,7 +123,12 @@ function main() {
   // 再開を押すと反映されないことがあった）。
   function loop() {
     if (running) {
-      simulator.step();
+      stepAccumulator += speedMultiplier;
+      while (stepAccumulator >= 1) {
+        simulator.step();
+        stepAccumulator -= 1;
+        if (simulator.state.phase === "MATCH_END") break;
+      }
     }
     if (simulator.state.phase === "MATCH_END") {
       loopAlive = false;
@@ -138,6 +149,11 @@ function main() {
     toggleBtn.textContent = running ? "一時停止" : "再開";
   });
 
+  speedBtn.addEventListener("click", () => {
+    speedMultiplier = speedMultiplier === 1 ? 0.5 : 1;
+    speedBtn.textContent = speedMultiplier === 1 ? "0.5倍速にする" : "等倍速に戻す";
+  });
+
   debugVisionToggle.addEventListener("change", () => {
     renderer.setDebugVision(debugVisionToggle.checked);
   });
@@ -146,6 +162,7 @@ function main() {
     const config = readConfigFromControls(inputs);
     simulator = new Simulator(config, renderer, new ConsoleLogger());
     running = true;
+    stepAccumulator = 0;
     toggleBtn.textContent = "一時停止";
     ensureLoopAlive();
   });
