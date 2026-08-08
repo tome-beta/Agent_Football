@@ -243,6 +243,39 @@ describe("decideAction: possession", () => {
   });
 });
 
+describe("decideAction: stun", () => {
+  it("stays put and counts down while stunned, regardless of ball state", () => {
+    const config = loadConfig({ random: { seed: 1 } });
+    const state = createInitialState(config);
+    const player = state.teams.A.players.find((p) => p.role === "DF")!;
+    player.stunTurns = 2;
+    player.vel = { x: 3, y: 3 };
+
+    decideAction(player, state, config);
+
+    expect(player.stunTurns).toBe(1);
+    expect(player.vel).toEqual({ x: 0, y: 0 });
+    expect(player.state).toBe("Idle");
+  });
+
+  it("resumes normal decision-making once the stun expires", () => {
+    const config = loadConfig({ random: { seed: 1 } });
+    const state = createInitialState(config);
+    const defender = state.teams.A.players.find((p) => p.role === "DF")!;
+    const opponent = state.teams.B.players.find((p) => p.role === "FW")!;
+    state.ball.status = "Possessed";
+    state.ball.possessorId = opponent.id;
+    defender.stunTurns = 1;
+
+    decideAction(defender, state, config);
+    expect(defender.stunTurns).toBe(0);
+    expect(defender.vel).toEqual({ x: 0, y: 0 });
+
+    decideAction(defender, state, config);
+    expect(defender.state).toBe("Marking");
+  });
+});
+
 describe("decideAction: non-possessor", () => {
   it("marks the nearest opponent when the opponent team has the ball", () => {
     const config = loadConfig({ random: { seed: 1 } });

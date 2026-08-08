@@ -194,6 +194,28 @@ describe("resolveBallPossession", () => {
     expect(ball.lastKickerId).toBe("A-FW");
     // 奪取時は速度を0にして新しい保持者が操作を始める。
     expect(ball.vel).toEqual({ x: 0, y: 0 });
+    // 奪われた旧保持者はその場で怯む。
+    expect(holder.stunTurns).toBe(config.ai.possessorStunTurns);
+  });
+
+  it("stuns neither player when the tackle attempt fails", () => {
+    const cfg: GameConfig = {
+      ...config,
+      ai: { ...config.ai, tackleSuccessChanceBase: 0, tackleSuccessAggroSpread: 0 },
+    };
+    const holder = playerAt("A-FW", "A", { x: 0, y: 0 });
+    const thief = playerAt("B-DF", "B", { x: cfg.ai.tackleDistance - 0.1, y: 0 });
+    const ball: Ball = {
+      ...ballAt({ x: 0, y: 0 }, { x: 1, y: 1 }),
+      status: "Possessed",
+      possessorId: "A-FW",
+    };
+
+    resolve([holder, thief], ball, { config: cfg });
+    // かわされた: 保持者は変わらず、挑んだ守備者だけが怯む。
+    expect(ball.possessorId).toBe("A-FW");
+    expect(thief.stunTurns).toBe(cfg.ai.defenderStunTurns);
+    expect(holder.stunTurns).toBe(0);
   });
 
   it("steals at exactly the tackle distance", () => {

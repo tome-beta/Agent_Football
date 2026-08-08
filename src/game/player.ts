@@ -21,6 +21,7 @@ export function createPlayer(
     pos: { ...homePos },
     vel: { x: 0, y: 0 },
     state: "Idle",
+    stunTurns: 0,
   };
 }
 
@@ -551,6 +552,14 @@ function decideFreeBallAction(player: Player, state: GameState, config: GameConf
  */
 export function decideAction(player: Player, state: GameState, config: GameConfig): void {
   const { ball } = state;
+
+  // タックルで奪われた/かわされた直後の怯み中は、その場で停止して通常の意思決定をしない。
+  if (player.stunTurns > 0) {
+    player.stunTurns -= 1;
+    player.vel = { x: 0, y: 0 };
+    player.state = "Idle";
+    return;
+  }
 
   if (ball.possessorId === player.id) {
     decidePossessionAction(player, state, config);

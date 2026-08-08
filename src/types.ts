@@ -35,6 +35,12 @@ export interface Player {
   pos: Vec2;
   vel: Vec2;
   state: PlayerActionState;
+  /**
+   * タックルで奪われた直後（旧保持者）、またはタックルに失敗してかわされた直後（守備者）に
+   * 残っている「怯み」ターン数。0より大きい間は decideAction が通常の意思決定をスキップし
+   * その場で停止する（ユーザー指摘、2026-08-08）。毎ターン1ずつ減る。
+   */
+  stunTurns: number;
 }
 
 export type BallStatus = "Free" | "Possessed" | "OutOfBounds";
@@ -141,6 +147,14 @@ export interface GameConfig {
     trapMaxBallSpeed: number;
     /** 相手保持者からボールを奪える距離 [m]。 */
     tackleDistance: number;
+    /** tackleDistance 以内にいる最も近い守備者がタックルを試みたときの成功確率（aggressiveness=0.5のときの基準値）。 */
+    tackleSuccessChanceBase: number;
+    /** 守備者の aggressiveness の偏差1あたりタックル成功率をどれだけ振るか（高いほど奪いやすい）。 */
+    tackleSuccessAggroSpread: number;
+    /** タックルで奪われた旧保持者が、その場で止まる怯みターン数。 */
+    possessorStunTurns: number;
+    /** タックルに失敗してかわされた守備者が、その場で止まる怯みターン数。 */
+    defenderStunTurns: number;
     /**
      * パス/シュートで飛んでいる（Free状態の）ボールの軌跡（1ターン分の移動線分）に
      * インターセプトを試みる距離 [m]。トラップと違い trapMaxBallSpeed の速度制限を待たない。

@@ -105,7 +105,27 @@ export function resolveBallPossession(
       return;
     }
 
+    // タックルは必ず成功するわけではない。守備者の aggressiveness が高いほど成功率が上がる
+    // （役割分岐ではなくパラメータの違いがそのまま確率の差ににじみ出るようにする）。
+    const tackleSuccessChance = Math.max(
+      0,
+      Math.min(
+        1,
+        config.ai.tackleSuccessChanceBase +
+          (stealer.params.aggressiveness - 0.5) * config.ai.tackleSuccessAggroSpread
+      )
+    );
+
+    if (!chance(rng, tackleSuccessChance)) {
+      // かわされた: 奪取は成立せず、挑んだ守備者だけがその場で怯む。保持者はそのまま持ち続ける。
+      stealer.stunTurns = config.ai.defenderStunTurns;
+      resolvePlayerBall(possessor, ball, config);
+      return;
+    }
+
     // 奪取: 保持者を差し替える。速度は一度0にし、新しい保持者が操作を始める（§4.3）。
+    // 奪われた旧保持者はその場で怯む。
+    possessor.stunTurns = config.ai.possessorStunTurns;
     ball.possessorId = stealer.id;
     ball.pos = { ...stealer.pos };
     ball.vel = { x: 0, y: 0 };
