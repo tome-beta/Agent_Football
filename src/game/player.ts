@@ -237,7 +237,15 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
 
   // パス相手もシュート機会もない、またはあえてドリブルを選んだ: ゴール方向へドリブル（保持継続）。
   player.state = "Possession";
-  moveToward(player, goal, config, dribbleSpeedFactor(player, config));
+  const myTeam = state.teams[player.team];
+  const advancement = (pos: Vec2) => (player.team === "A" ? pos.y : -pos.y);
+  const hasForwardSupport = myTeam.players.some(
+    (p) => p.id !== player.id && advancement(p.pos) > advancement(player.pos) + config.ai.soloDribbleSupportMargin
+  );
+  // 前方に味方が誰もいない（＝孤立して単独で敵陣へ持ち込もうとしている）場合は、方向は
+  // 変えずに速度だけ落とす。味方が追いつくのを待たず全力で駆け上がる不自然さを和らげる。
+  const soloFactor = hasForwardSupport ? 1 : 1 - config.ai.soloDribbleSpeedFactor;
+  moveToward(player, goal, config, dribbleSpeedFactor(player, config) * soloFactor);
 }
 
 /**
