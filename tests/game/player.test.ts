@@ -182,6 +182,33 @@ describe("decideAction: possession", () => {
     expect(carrier.vel.y).toBeGreaterThan(0);
   });
 
+  it("dribbles slower when isolated (no teammate ahead) than when a teammate offers forward support", () => {
+    const config = loadConfig({ random: { seed: 1 } });
+
+    function carrierSpeed(teammateAheadY: number) {
+      const state = createInitialState(config);
+      const carrier = state.teams.A.players.find((p) => p.role === "DF")!;
+      carrier.pos = { x: 0, y: -config.pitch.length / 2 + 5 };
+      // 他の味方は視野・パス圏外に飛ばしつつ、y座標だけ「前方かどうか」を制御する。
+      for (const p of state.teams.A.players) {
+        if (p.id !== carrier.id) p.pos = { x: 1000, y: teammateAheadY };
+      }
+      state.ball.pos = { ...carrier.pos };
+      state.ball.status = "Possessed";
+      state.ball.possessorId = carrier.id;
+      config.ai.shootProbability = 0;
+
+      decideAction(carrier, state, config);
+      return Math.hypot(carrier.vel.x, carrier.vel.y);
+    }
+
+    // 味方が自分よりさらに後方（isolated）な場合と、十分前方（support あり）な場合を比較する。
+    const isolatedSpeed = carrierSpeed(-config.pitch.length / 2);
+    const supportedSpeed = carrierSpeed(config.pitch.length / 2);
+
+    expect(isolatedSpeed).toBeLessThan(supportedSpeed);
+  });
+
   it("dribbles slower than a non-possessing player when passAccuracy is low", () => {
     const config = loadConfig({ random: { seed: 1 } });
 

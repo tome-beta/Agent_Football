@@ -48,6 +48,11 @@ export const defaultConfig: GameConfig = {
     passSpeedDistanceFactor: 0.3, // パス距離1mあたりの初速上乗せ量 [m/s]
     markedRadiusFactor: 2, // パス候補のマーク判定距離 = tackleDistance * この倍率
     dribbleSpeedPenaltyMax: 0.3, // ドリブル中の最大減速率（passAccuracy=0で30%減速、1で減速なし）
+    // balance-checkで0/0.2/0.3/0.4/0.5/0.7/1.0を比較（2026-08-08）。過去のポジショニング系の
+    // 変更と違い全域で平均得点4.75〜5.35と非線形な崩壊は見られなかった（無効時5.20）。
+    // 視覚的な効果とバランスの安定性を見て0.5を採用（平均得点5.10）。
+    soloDribbleSpeedFactor: 0.5, // 前方に味方がいないときの追加減速率
+    soloDribbleSupportMargin: 2, // 「前方に味方がいる」とみなす最小の前進差 [m]
     positioning: {
       ballPullWeight: 0.5, // home からの追従上限 = distance(home, ownGoal) * この係数
       repulsionWeight: 4, // 味方が近すぎるときに離れる力の強さ [m]
