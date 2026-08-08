@@ -218,6 +218,20 @@ describe("resolveBallPossession", () => {
     expect(holder.stunTurns).toBe(0);
   });
 
+  it("does not let a stunned opponent attempt a tackle", () => {
+    // スタン中の選手を除外しないと、隣接した2人が毎ターン互いのスタンを更新し続けて
+    // 位置が動かないまま重なり続けるループになっていた（ユーザー指摘、2026-08-08）。
+    const holder = playerAt("A-FW", "A", { x: 0, y: 0 });
+    const thief = playerAt("B-DF", "B", { x: config.ai.tackleDistance - 0.1, y: 0 });
+    thief.stunTurns = 3;
+    const ball: Ball = { ...ballAt({ x: 0, y: 0 }), status: "Possessed", possessorId: "A-FW" };
+
+    resolve([holder, thief], ball);
+    expect(ball.possessorId).toBe("A-FW");
+    // スタン中の守備者は候補から除外されるので、失敗によるスタン付与も起きない（維持されるだけ）。
+    expect(thief.stunTurns).toBe(3);
+  });
+
   it("steals at exactly the tackle distance", () => {
     const holder = playerAt("A-FW", "A", { x: 0, y: 0 });
     const thief = playerAt("B-DF", "B", { x: config.ai.tackleDistance, y: 0 });

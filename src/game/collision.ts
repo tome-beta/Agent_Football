@@ -93,9 +93,15 @@ export function resolveBallPossession(
   }
 
   if (possessor !== undefined) {
+    // スタン中（直前のタックルの成否で怯んでいる）選手はタックルを試みない。除外しないと、
+    // 隣接した2人が動けないままお互いのスタンを毎ターン上書き延長し続け、位置が一切変わらない
+    // まま何十〜何百ターンも重なって静止するループに陥っていた（ユーザー指摘、2026-08-08）。
     const stealer = nearestPlayer(
       players.filter(
-        (p) => p.team !== possessor.team && distance(p.pos, ball.pos) <= config.ai.tackleDistance
+        (p) =>
+          p.team !== possessor.team &&
+          p.stunTurns <= 0 &&
+          distance(p.pos, ball.pos) <= config.ai.tackleDistance
       ),
       ball
     );
