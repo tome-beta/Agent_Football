@@ -183,6 +183,13 @@ export interface GameConfig {
     /** vision の偏差（vision/180を基準に0.5からの差）1あたりドリブル確率をどれだけ下げるか（視野が広いほど受け手を見つけやすい）。 */
     dribbleChanceVisionSpread: number;
     /**
+     * selectPassReceiver が選んだ受け手が実際にオフサイドの場合、dribbleChance に加算する量。
+     * offside.avoidanceEnabled が false のときは評価自体を行わないため無効。縦パス一本槍を
+     * 避け、リスキーな受け手へのパスの代わりにドリブル継続を選びやすくする狙い
+     * （TODO.md マイルストーンK/L: オフサイド反則有効化時の得点崩壊対策）。
+     */
+    offsideRiskDribbleBoost: number;
+    /**
      * ボールを受け取ってから最低何ターン連続保持するまでパス/シュート判断そのものを
      * 行わず、必ずドリブル継続にするか（aggressiveness = 0.5 のときの基準値）。0だと
      * 従来通り受け取った1フレーム目からパス判定する。役割分岐ではなく aggressiveness が

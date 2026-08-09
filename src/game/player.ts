@@ -216,6 +216,16 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
   );
   const receiver = ball.possessionTurns < minHoldTurns ? undefined : selectPassReceiver(player, state, config);
   if (receiver !== undefined) {
+    const oppTeamForRisk = state.teams[opposite(player.team)];
+    // 選ばれた受け手がオフサイド濃厚な場合、縦パス一本槍にせず、あえてドリブル継続を
+    // 選ぶ確率を引き上げる。オフサイド判定を有効化した際の「自然発生率の高さに攻撃側の
+    // 代替手段が耐えられず得点がほぼ0まで崩壊する」問題（TODO.mdマイルストーンK/L）への
+    // 対策の第一歩。avoidanceEnabled が無効なときは isOffside を評価する意味がないため
+    // 何も変えず、デフォルトのゲームバランスに影響しない（既存の同種ガードと同じ方針）。
+    const receiverIsOffsideRisk =
+      config.ai.offside.avoidanceEnabled &&
+      isOffside(receiver.pos, player.team, oppTeamForRisk, player.pos, config);
+
     // 受け手がいても、役割ではなく aggressiveness/vision に応じた確率であえてドリブルを選ぶことがある。
     // aggressiveness が高いほど自分で運びたがり、vision が広いほど受け手を見つけやすくパスを選びやすい。
     const dribbleChance = Math.max(
@@ -224,7 +234,8 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
         1,
         config.ai.dribbleChanceBase +
           (player.params.aggressiveness - 0.5) * config.ai.dribbleChanceAggroSpread -
-          (player.params.vision / 180 - 0.5) * config.ai.dribbleChanceVisionSpread
+          (player.params.vision / 180 - 0.5) * config.ai.dribbleChanceVisionSpread +
+          (receiverIsOffsideRisk ? config.ai.offsideRiskDribbleBoost : 0)
       )
     );
     if (!chance(state, dribbleChance)) {
