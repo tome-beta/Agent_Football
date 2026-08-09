@@ -266,7 +266,44 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
   // 前方に味方が誰もいない（＝孤立して単独で敵陣へ持ち込もうとしている）場合は、方向は
   // 変えずに速度だけ落とす。味方が追いつくのを待たず全力で駆け上がる不自然さを和らげる。
   const soloFactor = hasForwardSupport ? 1 : 1 - config.ai.soloDribbleSpeedFactor;
-  moveToward(player, goal, config, dribbleSpeedFactor(player, config) * soloFactor);
+
+  // マークされている（敵が近い）ときの方向づけ。敵を抜いて前進する「打開」ではなく、
+  // 味方が受け手ポジションへ動くのを待つ「キープ」が狙いなので、速度は上げずマーカーから
+  // 離れる方向をゴール方向へブレンドするだけに留める（独走力を上げて過去の非線形崩壊
+  // ［TODO.md参照］を再現しないため）。ブレンド比率は aggressiveness で連続的に決まり、
+  // 高い選手ほど強引にゴール方向を維持し、低い選手ほどキープを優先する
+  // （ユーザー指摘、2026-08-09: 役割固定ではなくパラメータで選ばせたい）。
+  const oppTeam = state.teams[opposite(player.team)];
+  const nearestOpp = nearestPosTo(player.pos, oppTeam.players);
+  let dribbleTarget = goal;
+  if (nearestOpp !== undefined) {
+    const markingRange = config.ai.tackleDistance * config.ai.markedRadiusFactor;
+    const nearestOppDist = distance(player.pos, nearestOpp);
+    const markingPressure = Math.max(0, markingRange - nearestOppDist);
+    if (markingPressure > 0) {
+      const awayFromMarker = sub(player.pos, nearestOpp);
+      if (length(awayFromMarker) > 1e-6) {
+        const evasionWeight = Math.max(
+          0,
+          Math.min(
+            1,
+            config.ai.keepDribbleEvasionBase -
+              (player.params.aggressiveness - 0.5) * config.ai.keepDribbleEvasionAggroSpread
+          )
+        );
+        const blend = evasionWeight * Math.min(1, markingPressure / markingRange);
+        // 座標点同士を補間すると、ゴールが遠くマーカー回避先が近いため小さいblendでは
+        // ほぼゴール直進のままになってしまう。方向ベクトル同士を混ぜてから player.pos に
+        // 足し戻すことで、blend の値がそのまま向きの変化量に反映されるようにする。
+        const goalDir = normalize(sub(goal, player.pos));
+        const awayDir = normalize(awayFromMarker);
+        const blendedDir = normalize(add(scale(goalDir, 1 - blend), scale(awayDir, blend)));
+        dribbleTarget = add(player.pos, blendedDir);
+      }
+    }
+  }
+
+  moveToward(player, dribbleTarget, config, dribbleSpeedFactor(player, config) * soloFactor);
 }
 
 /**

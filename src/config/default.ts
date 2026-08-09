@@ -49,6 +49,8 @@ export const defaultConfig: GameConfig = {
     dribbleChanceAggroSpread: 0.4, // aggressivenessの偏差1あたりの確率変化幅（高いほど自分で運びたがる）
     dribbleChanceVisionSpread: 0.3, // vision(/180)の偏差1あたりの確率変化幅（広いほど受け手を見つけやすくパスを選びやすい）
     offsideRiskDribbleBoost: 0.5, // 選んだ受け手がオフサイドの場合にdribbleChanceへ加算する量
+    keepDribbleEvasionBase: 0.5, // マークされている孤立時ドリブルの回避方向ブレンド率の基準値
+    keepDribbleEvasionAggroSpread: 0.6, // aggressivenessの偏差1あたりの変化幅（高いほど回避せずゴール優先）
     minHoldTurnsBase: 4, // aggressiveness=0.5の選手が最低ドリブル継続する保持ターン数（4ターン=0.4秒）
     minHoldTurnsAggroSpread: 4, // aggressivenessの偏差1あたりの変化幅（高いほど長く持ち運ぶ）
     moveStopThreshold: 0.1, // この距離未満まで近づいたら移動を止める [m]

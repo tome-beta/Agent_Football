@@ -190,6 +190,15 @@ export interface GameConfig {
      */
     offsideRiskDribbleBoost: number;
     /**
+     * 孤立時ドリブルでマークされている（markingPressure > 0）ときの基準の回避ブレンド率
+     * （0〜1、aggressiveness=0.5のときの値）。ゴール方向とマーカーから離れる方向を
+     * この比率で混ぜる。「打開」ではなく「味方が動くのを待つキープ」が狙いなので、
+     * 速度自体は上げない（dribbleSpeedFactor/soloFactorは従来通り）。
+     */
+    keepDribbleEvasionBase: number;
+    /** aggressiveness の偏差1あたり keepDribbleEvasionBase をどれだけ下げるか（高いほどゴール優先で回避しない）。 */
+    keepDribbleEvasionAggroSpread: number;
+    /**
      * ボールを受け取ってから最低何ターン連続保持するまでパス/シュート判断そのものを
      * 行わず、必ずドリブル継続にするか（aggressiveness = 0.5 のときの基準値）。0だと
      * 従来通り受け取った1フレーム目からパス判定する。役割分岐ではなく aggressiveness が
