@@ -36,4 +36,27 @@ describe("loadConfig", () => {
     loadConfig({ pitch: { width: 1 } as never });
     expect(defaultConfig.pitch.width).toBe(50);
   });
+
+  it("does not share nested ai.offside/ai.positioning objects with defaultConfig", () => {
+    // 以前は ai セクションが1階層しか複製されず、ai.offside/ai.positioning は
+    // defaultConfig のオブジェクトをそのまま共有参照していた。呼び出し側が
+    // `config.ai.offside.avoidanceEnabled = true` のように直接書き換えると、
+    // 以降の loadConfig() 呼び出しすべてに汚染が漏れていた（回帰防止）。
+    const config = loadConfig({ random: { seed: 1 } });
+    config.ai.offside.avoidanceEnabled = true;
+    config.ai.offside.kpp.forwardWeight = 999;
+    config.ai.positioning.pressWeight = 999;
+
+    expect(defaultConfig.ai.offside.avoidanceEnabled).toBe(false);
+    expect(defaultConfig.ai.offside.kpp.forwardWeight).not.toBe(999);
+    expect(defaultConfig.ai.positioning.pressWeight).not.toBe(999);
+  });
+
+  it("no-arg call returns a fresh object each time, not the shared defaultConfig instance", () => {
+    const a = loadConfig();
+    const b = loadConfig();
+    expect(a).not.toBe(defaultConfig);
+    expect(a).not.toBe(b);
+    expect(a).toEqual(defaultConfig);
+  });
 });
