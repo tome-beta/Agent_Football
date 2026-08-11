@@ -212,6 +212,14 @@ export interface GameConfig {
     /** mental の偏差1あたり keepDribbleEvasionBase をどれだけ下げるか（高いほどゴール優先で回避しない）。 */
     keepDribbleEvasionMentalSpread: number;
     /**
+     * technique の偏差1あたり keepDribbleEvasionBase をどれだけ下げるか（マークされても
+     * 純粋な回避に頼らずゴール方向を維持しやすい＝打開力の代用）。mental と同じクランプ
+     * （0〜1、既存の keepDribbleEvasionMentalSpread と同枠）に乗せるだけなので、独走力を
+     * 際限なく上げて過去の非線形崩壊を再現するリスクはない（設計は会話ログ参照、
+     * `specification/features_offside.md` の反則化崩壊対策の一環）。
+     */
+    keepDribbleEvasionTechniqueSpread: number;
+    /**
      * ボールを受け取ってから最低何ターン連続保持するまでパス/シュート判断そのものを
      * 行わず、必ずドリブル継続にするか（mental = 0.5 のときの基準値）。0だと
      * 従来通り受け取った1フレーム目からパス判定する。役割分岐ではなく mental が
@@ -321,6 +329,18 @@ export interface GameConfig {
       backSupportMentalSpread: number;
       /** バックサポート位置の、ボールから自ゴール方向への距離を passDistance の何倍とするか。 */
       backSupportDistanceFactor: number;
+      /**
+       * 味方保持中、前進もバックサポートも選ばなかった場合に、ボールとほぼ同じ前進度を
+       * 保ったまま逆サイドへ開く「横サポート」を目指す基準確率（vision = 90度のときの値）。
+       * 前進（縦）とバックサポート（後退）の二択しかないと、前進レーンが塞がれた場面での
+       * 代替手段が乏しくなる（オフサイド反則有効化時に得点が崩壊する一因、
+       * `specification/features_offside.md` 参照）ため、幅を使う第三の選択肢として追加する。
+       */
+      lateralSupportChanceBase: number;
+      /** vision の偏差（vision/180を基準に0.5からの差）1あたり横サポート確率をどれだけ振るか（広いほど選びやすい）。 */
+      lateralSupportVisionSpread: number;
+      /** 横サポート位置の、home.x と逆サイドへ開く距離を passDistance の何倍とするか。 */
+      lateralSupportDistanceFactor: number;
     };
     /** オフサイド判定（ステップ1: AI回避。ステップ2: 反則としてのターンオーバー処理）。 */
     offside: {

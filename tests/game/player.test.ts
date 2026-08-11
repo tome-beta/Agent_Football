@@ -328,7 +328,11 @@ describe("decideAction: non-possessor", () => {
   });
 
   it("makes a forward run toward the attacking goal while supporting, not just drifting toward the ball", () => {
+    // 横サポート（lateralSupportChanceBase/VisionSpread）は前進しない別分岐なので、この
+    // テストの対象（前進した受け手ポジションへ向かうこと）を検証するために無効化する。
     const config = loadConfig({ random: { seed: 1 } });
+    config.ai.positioning.lateralSupportChanceBase = 0;
+    config.ai.positioning.lateralSupportVisionSpread = 0;
     const state = createInitialState(config);
     const supporter = state.teams.A.players.find((p) => p.role === "MF")!;
     const carrier = state.teams.A.players.find((p) => p.role === "FW")!;
@@ -345,7 +349,13 @@ describe("decideAction: non-possessor", () => {
   });
 
   it("steers the receiving spot away from a marker sitting right on it, but ignores a distant one", () => {
+    // バックサポート/横サポート分岐に入ると受け手ポジション側のマーカー回避ロジックを
+    // 通らなくなるため、このテストの対象（前進した受け手ポジションのマーカー回避）を
+    // 検証するために両方無効化する。
     const config = loadConfig({ random: { seed: 1 } });
+    config.ai.positioning.backSupportChanceBase = 0;
+    config.ai.positioning.lateralSupportChanceBase = 0;
+    config.ai.positioning.lateralSupportVisionSpread = 0;
 
     function supporterVel(markerPos: { x: number; y: number }) {
       const state = createInitialState(config);

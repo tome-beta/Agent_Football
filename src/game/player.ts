@@ -270,9 +270,11 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
   // マークされている（敵が近い）ときの方向づけ。敵を抜いて前進する「打開」ではなく、
   // 味方が受け手ポジションへ動くのを待つ「キープ」が狙いなので、速度は上げずマーカーから
   // 離れる方向をゴール方向へブレンドするだけに留める（独走力を上げて過去の非線形崩壊
-  // ［TODO.md参照］を再現しないため）。ブレンド比率は mental で連続的に決まり、
+  // ［TODO.md参照］を再現しないため）。ブレンド比率は mental/technique で連続的に決まり、
   // 高い選手ほど強引にゴール方向を維持し、低い選手ほどキープを優先する
-  // （ユーザー指摘、2026-08-09: 役割固定ではなくパラメータで選ばせたい）。
+  // （ユーザー指摘、2026-08-09: 役割固定ではなくパラメータで選ばせたい）。technique は
+  // カルチョビットのテクニック相当で、マークをかわしつつ前進を維持する「打開力」の
+  // 代用として使う（オフサイド反則有効化時の攻撃代替手段強化の一環）。
   const oppTeam = state.teams[opposite(player.team)];
   const nearestOpp = nearestPosTo(player.pos, oppTeam.players);
   let dribbleTarget = goal;
@@ -288,7 +290,8 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
           Math.min(
             1,
             config.ai.keepDribbleEvasionBase -
-              (player.params.mental - 0.5) * config.ai.keepDribbleEvasionMentalSpread
+              (player.params.mental - 0.5) * config.ai.keepDribbleEvasionMentalSpread -
+              (player.params.technique - 0.5) * config.ai.keepDribbleEvasionTechniqueSpread
           )
         );
         const blend = evasionWeight * Math.min(1, markingPressure / markingRange);
@@ -454,6 +457,33 @@ function computeBackSupportTarget(
 }
 
 /**
+ * 横サポート位置: ボールとほぼ同じ前進度（y）を保ったまま、home.x と逆サイドへ
+ * lateralSupportDistanceFactor 分だけ開いた地点。サイドチェンジ・落としてからの
+ * 展開先として、前進（縦）ともバックサポート（後退）とも異なる第三の選択肢を提供する。
+ * home.x が中央寄り（ほぼ0）の選手は、代わりにボールに対して逆サイドへ開く。
+ */
+function computeLateralSupportTarget(player: Player, home: Vec2, ballPos: Vec2, oppTeam: Team, config: GameConfig): Vec2 {
+  const p = config.ai.positioning;
+  const lateralDistance = config.ai.passDistance * p.lateralSupportDistanceFactor;
+  const awaySign = Math.abs(home.x) > 1e-6 ? -Math.sign(home.x) : Math.sign(ballPos.x) > 0 ? -1 : 1;
+  const base = { x: ballPos.x + awaySign * lateralDistance, y: ballPos.y };
+
+  const markerRange = config.ai.passDistance * p.markerAvoidRangeFactor;
+  const marker = nearestPosTo(base, oppTeam.players);
+  let openSpot = base;
+  if (marker !== undefined && distance(base, marker) < markerRange) {
+    const awayFromMarker = sub(base, marker);
+    if (length(awayFromMarker) > 1e-6) {
+      openSpot = add(base, scale(normalize(awayFromMarker), p.markerAvoidStepDistance));
+    }
+  }
+  return {
+    x: openSpot.x,
+    y: openSpot.y * (1 - p.receivingHomeBlendY) + home.y * p.receivingHomeBlendY,
+  };
+}
+
+/**
  * 非保持の選手が目指す目標位置を、複数の「力」を合成して決める（マイルストーンH）。
  * 役割（FW/MF/DF）による分岐は書かず、`homePos`/`params` の違いが結果ににじみ出るようにする。
  *
@@ -551,6 +581,27 @@ function computeTargetPosition(player: Player, state: GameState, config: GameCon
       target = computeBackSupportTarget(player, home, ball.pos, own, oppTeam, config);
       target = applyTeammateRepulsion(player, target, myTeam, p);
       return target;
+    }
+
+    // 前進（縦）とバックサポート（後退）の二択だけだと、前進レーンが塞がれた場面
+    // （オフサイド回避で前進が抑えられているときなど）の代替手段が乏しい。ボールとほぼ
+    // 同じ前進度を保ったまま逆サイドへ開く「横サポート」を第三の選択肢として加える
+    // （`specification/features_offside.md` の反則化崩壊を受けた対策、設計は会話ログ参照）。
+    // vision が広い選手ほど幅を使ったプレーを選びやすい。offsideRiskDribbleBoost と同様、
+    // avoidanceEnabled が無効なときは isOffside 系の評価自体が無意味なので分岐に入らず、
+    // chance() の乱数消費すら行わない（デフォルトのゲームバランス・RNG列に一切影響しない。
+    // balance-checkで確認済み: 乱数だけ消費する形にすると offside 無効時でも勝敗分布が
+    // 変わってしまった）。
+    if (config.ai.offside.avoidanceEnabled) {
+      const lateralSupportChance = Math.max(
+        0,
+        Math.min(1, p.lateralSupportChanceBase + (player.params.vision / 180 - 0.5) * p.lateralSupportVisionSpread)
+      );
+      if (chance(state, lateralSupportChance)) {
+        target = computeLateralSupportTarget(player, home, ball.pos, oppTeam, config);
+        target = applyTeammateRepulsion(player, target, myTeam, p);
+        return target;
+      }
     }
 
     const towardGoalDir = normalize(sub(goal, ball.pos));

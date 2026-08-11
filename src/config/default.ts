@@ -51,6 +51,7 @@ export const defaultConfig: GameConfig = {
     offsideRiskDribbleBoost: 0.5, // 選んだ受け手がオフサイドの場合にdribbleChanceへ加算する量
     keepDribbleEvasionBase: 0.5, // マークされている孤立時ドリブルの回避方向ブレンド率の基準値
     keepDribbleEvasionMentalSpread: 0.6, // mentalの偏差1あたりの変化幅（高いほど回避せずゴール優先）
+    keepDribbleEvasionTechniqueSpread: 0.4, // techniqueの偏差1あたりの変化幅（高いほど回避に頼らずゴール優先＝打開力）
     minHoldTurnsBase: 4, // mental=0.5の選手が最低ドリブル継続する保持ターン数（4ターン=0.4秒）
     minHoldTurnsMentalSpread: 4, // mentalの偏差1あたりの変化幅（高いほど長く持ち運ぶ）
     moveStopThreshold: 0.1, // この距離未満まで近づいたら移動を止める [m]
@@ -91,6 +92,9 @@ export const defaultConfig: GameConfig = {
       backSupportChanceBase: 0.15, // mental=0.5の選手が毎ターンバックサポートを選ぶ基準確率
       backSupportMentalSpread: 0.5, // mentalの偏差1あたりの確率変化幅（低いほど後方支援に回りやすい）
       backSupportDistanceFactor: 0.5, // バックサポート位置の距離 = passDistance * この係数
+      lateralSupportChanceBase: 0.25, // vision=90度の選手が毎ターン横サポートを選ぶ基準確率
+      lateralSupportVisionSpread: 0.5, // visionの偏差1あたりの確率変化幅（広いほど選びやすい）
+      lateralSupportDistanceFactor: 0.6, // 横サポート位置の距離 = passDistance * この係数
     },
     offside: {
       // ステップ1（AI回避）を有効化すると selectPassReceiver/computeTargetPosition
