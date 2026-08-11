@@ -25,11 +25,11 @@ description: soccer-sim を複数シードで連続実行し、安定性（ク�
 
 ## 実行コマンド
 
-`npx` が使えない環境なので `tsx` を直接叩く:
-
 ```bash
-cd g:/Agent_Football && PATH="$PATH:/c/Program Files/nodejs" ./node_modules/.bin/tsx scratch_balance.ts
+cd g:/Agent_Football && npx tsx scratch_balance.ts
 ```
+
+（`npx` がPATH解決に失敗する環境に当たったら `./node_modules/.bin/tsx` を直接叩くか `PATH="$PATH:/c/Program Files/nodejs"` を前置きする）
 
 ## 過去に見つかった既知の偏り（参考値）
 

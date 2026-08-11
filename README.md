@@ -6,14 +6,12 @@
 
 - **言語**: TypeScript
 - **ターゲット**: ブラウザ（Canvas 2D）／ Node ヘッドレス
-- **ステータス**: **マイルストーンA〜H 完了**（第一ステップ MVP、Release v1.0 相当）
-  - 実装済み: 型定義・設定（`GameConfig`）・ピッチ・初期状態生成（両チーム3人の配置）・決定的乱数・ベクトル演算・スコア集計・ボール物理（移動/摩擦/速度上限/キック）・当たり判定（キック距離/トラップ/保持追従/奪取）・選手AI（行動ステートマシン・パス/シュート/マーク判定・力の合成モデルによる非保持時ポジショニング）・試合ルール（フェーズ遷移・ゴール判定・キックオフ/再開・勝敗判定）・`Simulator`（メインループ）・`CanvasRenderer`（ピッチ/選手/ボール/HUD描画、横向き表示、視野範囲デバッグ表示）・ブラウザUI（一時停止/再開・役割別パラメータ調整スライダー・再スタート）
+- **ステータス**: **マイルストーンA〜M 完了/決着済み**（第一ステップ MVP、Release v1.0 相当）
+  - 実装済み: 型定義・設定（`GameConfig`）・ピッチ・初期状態生成（両チーム3人の配置）・決定的乱数・ベクトル演算・スコア集計・ボール物理（移動/摩擦/速度上限/キック）・当たり判定（キック距離/トラップ/保持追従/奪取/パスのインターセプト）・選手AI（行動ステートマシン・パス/シュート/マーク判定・力の合成モデルによる非保持時ポジショニング・受け手ポジショニングの統一スコアリング）・試合ルール（フェーズ遷移・ゴール判定・キックオフ/再開・勝敗判定）・`Simulator`（メインループ）・`CanvasRenderer`（ピッチ/選手/ボール/HUD描画、横向き表示、視野範囲デバッグ表示）・ブラウザUI（一時停止/再開・役割別パラメータ調整スライダー・再スタート）
   - `npm run headless` は例外なく1試合（前後半計1800ターン）を完走し、`npm run dev` でブラウザ上でも試合が自動再生される（**MVP v0.2 達成**）
-  - マイルストーンG（テスト・調整）で、複数試合連続実行時に「キックオフ側がほぼ確実に得点する」偏りを発見・`GameConfig.ai.positioning` の重み調整で緩和済み（詳細は `TODO.md`）
-  - マイルストーンH（力の合成モデルによるポジショニング刷新）で、役割別に分岐していた非保持時ロジックを `computeTargetPosition` に統合済み
-  - マイルストーンHの追加調整（2026-08-01）: 複数人でプレスする際に敵保持者を囲む動き（`computeApproachPoint`）、プレス判断の確率化（`aggressiveness` に応じて毎ターン揺らぐ）を追加し、`player.ts` 内のマジックナンバーを `GameConfig` へ切り出した。また視認性向上のため `CanvasRenderer` の表示スケールと選手/ボールマーカーを拡大した（詳細は `TODO.md`）
-  - パス/ドリブル確率化（`aggressiveness`/`vision` 連動）を追加する過程で「パスはノーリスク、ドリブルだけハイリスク」という偏りの根本原因を発見し、パスのインターセプト判定（`resolveBallPossession`、ボールの1ターン分の移動軌跡への距離＋確率判定）を追加した。20試合の比較で勝敗8/6/6・総得点50-50までバランスが改善（詳細は `TODO.md`）
-  - 次の作業: 第二ステップ（`TODO.md` の「第二ステップ以降」参照。スタミナ・GK AI・オフサイドなど）
+  - マイルストーンG（テスト・調整）で「キックオフ側がほぼ確実に得点する」偏りを発見・`GameConfig.ai.positioning` の重み調整で緩和、マイルストーンH（力の合成モデル）で非保持時ロジックを `computeTargetPosition` に統合、マイルストーンI（オフサイド ステップ1・AI回避）まで完了（詳細は `TODO_ARCHIVE.md`）
+  - オフサイドの反則化（ステップ2、マイルストーンJ〜M）は複数回試みたが、有効化すると平均得点がほぼ0まで崩壊する問題が未解決のまま撤回・保留（`config.ai.offside.enabled`/`enforcementEnabled` は `false`）。詳細・根本原因の調査記録は `TODO_ARCHIVE.md` マイルストーンM参照
+  - 次の作業: 第二ステップ（`TODO.md` の「未完了タスク」参照。スタミナ・GK AI・オフサイド ステップ2再挑戦など）
 
 ## 2段階開発アプローチ
 
@@ -62,7 +60,8 @@ project/
 │   ├── api.md                # 型と関数のリファレンス
 │   └── development_guide.md  # 実装手順と守るべき約束
 ├── specification/            # 機能設計の元資料（なぜそう作るか）
-├── TODO.md                   # マイルストーンと進捗
+├── TODO.md                   # 現在地の要約と未完了タスク
+├── TODO_ARCHIVE.md           # 完了・撤回済みマイルストーンの詳細記録
 └── index.html                # ブラウザ HTML（Canvas）
 ```
 
@@ -77,8 +76,6 @@ npm run typecheck    # 型チェック（tsc --noEmit）
 npm run dev          # 第二段階: Vite dev server でブラウザ実行
 npm run build        # 本番ビルド（型チェック + Vite bundle）
 ```
-
-> `npx` が PATH に無い環境では `./node_modules/.bin/vitest run` のように直接叩いてください。
 
 `npm run headless` は例外なく試合結果（`Match result: Team A n - m Team B (Winner: ...)`）を出力して終了します。`npm run dev` を開くと自動的に試合が再生されます（操作は不要）。
 
@@ -97,8 +94,8 @@ npm run build        # 本番ビルド（型チェック + Vite bundle）
 - [docs/architecture.md](docs/architecture.md) — 層構成・依存方向・1ターンのデータフロー
 - [docs/api.md](docs/api.md) — 型と関数のリファレンス（未実装のものは明記）
 - [docs/development_guide.md](docs/development_guide.md) — 実装手順・テストの書き方
-- [TODO.md](TODO.md) — マイルストーンごとの進捗
+- [TODO.md](TODO.md) — 現在地の要約と未完了タスク（完了済みの詳細は [TODO_ARCHIVE.md](TODO_ARCHIVE.md)）
 - `specification/features_*.md` — 各機能の設計意図。マイルストーン着手前に読むこと
-- `.claude/skills/` — 定型作業のスキル（`implement-stub`＝スタブ実装の型、`verify`＝検証手順、`find-bugs`＝再現検証付きバグ調査、`balance-check`＝複数シード実行での安定性・スコア偏り確認）
+- `.claude/skills/` — 定型作業のスキル（`implement-stub`＝スタブ実装の型、`verify`＝検証手順、`find-bugs`＝再現検証付きバグ調査、`balance-check`＝複数シード実行での安定性・スコア偏り確認、`anomaly-hunt`＝異常検知から原因特定まで、`update-docs`＝ドキュメント更新）
 
 ドキュメントとコードが食い違う場合は、**常に `src/types.ts` と実際のソースコードが正**です。

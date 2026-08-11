@@ -43,8 +43,10 @@ const state = createInitialState(config);
 実行:
 
 ```bash
-cd g:/Agent_Football && PATH="$PATH:/c/Program Files/nodejs" ./node_modules/.bin/tsx scratch_check/repro.ts
+cd g:/Agent_Football && npx tsx scratch_check/repro.ts
 ```
+
+（`npx` がPATH解決に失敗する環境に当たったら `./node_modules/.bin/tsx` を直接叩くか `PATH="$PATH:/c/Program Files/nodejs"` を前置きする）
 
 確認できたら `rm -rf scratch_check` で必ず削除する（コミットに混ぜない）。
 
