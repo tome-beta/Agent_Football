@@ -18,11 +18,24 @@ export type PlayerActionState =
   | "MovingToSpace";
 
 export interface PlayerParams {
+  /** カルチョビット「スピード」相当。 */
   speed: number;
+  /** カルチョビット「キック」のパス精度側（soccer-sim独自にshootPowerと分離）。 */
   passAccuracy: number;
+  /** カルチョビット「キック」のシュート威力側（soccer-sim独自にpassAccuracyと分離）。 */
   shootPower: number;
+  /** カルチョビットに対応パラメータなし。soccer-sim独自拡張（視野角）。 */
   vision: number;
-  aggressiveness: number;
+  /** カルチョビット「メンタル」相当。積極性・強気さ・根性（プレス/ドリブル選択/シュート意欲などを左右）。 */
+  mental: number;
+  /** カルチョビット「テクニック」相当。タックル成功率を左右する。 */
+  technique: number;
+  /** カルチョビット「スタミナ」相当。型のみ定義済みで現状挙動には未反映（Phase 2で実装予定）。 */
+  stamina: number;
+  /** カルチョビット「フィジカル」相当。型のみ定義済みで現状挙動には未反映（Phase 2で実装予定）。 */
+  physical: number;
+  /** カルチョビット「ジャンプ」相当。型のみ定義済み。ヘディング未実装のため現状未使用。 */
+  jump: number;
 }
 
 export interface Player {
@@ -147,10 +160,10 @@ export interface GameConfig {
     trapMaxBallSpeed: number;
     /** 相手保持者からボールを奪える距離 [m]。 */
     tackleDistance: number;
-    /** tackleDistance 以内にいる最も近い守備者がタックルを試みたときの成功確率（aggressiveness=0.5のときの基準値）。 */
+    /** tackleDistance 以内にいる最も近い守備者がタックルを試みたときの成功確率（technique=0.5のときの基準値）。 */
     tackleSuccessChanceBase: number;
-    /** 守備者の aggressiveness の偏差1あたりタックル成功率をどれだけ振るか（高いほど奪いやすい）。 */
-    tackleSuccessAggroSpread: number;
+    /** 守備者の technique の偏差1あたりタックル成功率をどれだけ振るか（高いほど奪いやすい）。 */
+    tackleSuccessTechniqueSpread: number;
     /** タックルで奪われた旧保持者が、その場で止まる怯みターン数。 */
     possessorStunTurns: number;
     /** タックルに失敗してかわされた守備者が、その場で止まる怯みターン数。 */
@@ -174,12 +187,12 @@ export interface GameConfig {
     /** passAccuracy/shootPower が 0 のときの最大キック角度誤差 [度]。1 のとき誤差0。 */
     aimErrorMaxDeg: number;
     /**
-     * パス受け手がいてもあえてドリブルを続ける基準確率（aggressiveness=0.5, vision=90度のときの値）。
-     * 役割分岐ではなく aggressiveness/vision の値がそのまま確率の差になる。
+     * パス受け手がいてもあえてドリブルを続ける基準確率（mental=0.5, vision=90度のときの値）。
+     * 役割分岐ではなく mental/vision の値がそのまま確率の差になる。
      */
     dribbleChanceBase: number;
-    /** aggressiveness の偏差1あたりドリブル確率をどれだけ振るか（高いほど自分で運びたがる）。 */
-    dribbleChanceAggroSpread: number;
+    /** mental の偏差1あたりドリブル確率をどれだけ振るか（高いほど自分で運びたがる）。 */
+    dribbleChanceMentalSpread: number;
     /** vision の偏差（vision/180を基準に0.5からの差）1あたりドリブル確率をどれだけ下げるか（視野が広いほど受け手を見つけやすい）。 */
     dribbleChanceVisionSpread: number;
     /**
@@ -191,22 +204,22 @@ export interface GameConfig {
     offsideRiskDribbleBoost: number;
     /**
      * 孤立時ドリブルでマークされている（markingPressure > 0）ときの基準の回避ブレンド率
-     * （0〜1、aggressiveness=0.5のときの値）。ゴール方向とマーカーから離れる方向を
+     * （0〜1、mental=0.5のときの値）。ゴール方向とマーカーから離れる方向を
      * この比率で混ぜる。「打開」ではなく「味方が動くのを待つキープ」が狙いなので、
      * 速度自体は上げない（dribbleSpeedFactor/soloFactorは従来通り）。
      */
     keepDribbleEvasionBase: number;
-    /** aggressiveness の偏差1あたり keepDribbleEvasionBase をどれだけ下げるか（高いほどゴール優先で回避しない）。 */
-    keepDribbleEvasionAggroSpread: number;
+    /** mental の偏差1あたり keepDribbleEvasionBase をどれだけ下げるか（高いほどゴール優先で回避しない）。 */
+    keepDribbleEvasionMentalSpread: number;
     /**
      * ボールを受け取ってから最低何ターン連続保持するまでパス/シュート判断そのものを
-     * 行わず、必ずドリブル継続にするか（aggressiveness = 0.5 のときの基準値）。0だと
-     * 従来通り受け取った1フレーム目からパス判定する。役割分岐ではなく aggressiveness が
+     * 行わず、必ずドリブル継続にするか（mental = 0.5 のときの基準値）。0だと
+     * 従来通り受け取った1フレーム目からパス判定する。役割分岐ではなく mental が
      * 高い選手ほど長く持ち運びたがる形にする。
      */
     minHoldTurnsBase: number;
-    /** aggressiveness の偏差1あたり minHoldTurnsBase をどれだけ振るか（高いほど長く持つ）。 */
-    minHoldTurnsAggroSpread: number;
+    /** mental の偏差1あたり minHoldTurnsBase をどれだけ振るか（高いほど長く持つ）。 */
+    minHoldTurnsMentalSpread: number;
     /** この距離 [m] 未満まで近づいたら目標地点に到達したとみなし、移動を止める（moveToward）。 */
     moveStopThreshold: number;
     /** パス初速に、パス距離 [m] 1mあたり何 m/s 上乗せするか。 */
@@ -241,18 +254,18 @@ export interface GameConfig {
       minSpacing: number;
       /** ボール-自ゴール間の線上に吸着する強さ（0〜1のブレンド率）。 */
       coverWeight: number;
-      /** 敵ボール保持者へ詰め寄る強さ（0〜1のブレンド率。aggressiveness と掛け合わせる）。 */
+      /** 敵ボール保持者へ詰め寄る強さ（0〜1のブレンド率。mental と掛け合わせる）。 */
       pressWeight: number;
       /** この距離以内の敵ボール保持者にのみ詰め寄る [m]。 */
       pressDistance: number;
       /** 複数人で詰め寄るとき、敵保持者を中心に囲む半径 [m]。 */
       surroundRadius: number;
       /**
-       * 毎ターン、実際に詰め寄るかどうかを確率で決める際の基準値（aggressiveness = 0.5 のときの確率）。
-       * 役割による分岐ではなく、aggressiveness の違いがそのまま確率の差になる。
+       * 毎ターン、実際に詰め寄るかどうかを確率で決める際の基準値（mental = 0.5 のときの確率）。
+       * 役割による分岐ではなく、mental の違いがそのまま確率の差になる。
        */
       pressChanceBase: number;
-      /** pressChanceBase から aggressiveness の偏差1あたりどれだけ確率を振るか（+/-方向）。 */
+      /** pressChanceBase から mental の偏差1あたりどれだけ確率を振るか（+/-方向）。 */
       pressChanceSpread: number;
       /**
        * その瞬間、自チームの中で最も自ゴールに近い選手（＝最終ライン）の pressChance に
@@ -298,14 +311,14 @@ export interface GameConfig {
       receivingHomeBlendY: number;
       /**
        * 味方保持中、受け手ポジションではなくボールより後方の「バックパス受け」を
-       * 目指す基準確率（aggressiveness = 0.5 のときの確率）。役割分岐ではなく
-       * aggressiveness の低さ（＝運ぶより繋ぎたい選手）がそのまま確率の差になる。
+       * 目指す基準確率（mental = 0.5 のときの確率）。役割分岐ではなく
+       * mental の低さ（＝運ぶより繋ぎたい選手）がそのまま確率の差になる。
        * 前進した支援ポジションしか候補が生まれない構造だと、保持者が孤立していても
        * バックパスという選択肢自体が存在しなかった（ユーザー指摘、2026-08-08）。
        */
       backSupportChanceBase: number;
-      /** aggressiveness の偏差1あたりバックサポート確率をどれだけ振るか（低いほど後方支援に回りやすい）。 */
-      backSupportAggroSpread: number;
+      /** mental の偏差1あたりバックサポート確率をどれだけ振るか（低いほど後方支援に回りやすい）。 */
+      backSupportMentalSpread: number;
       /** バックサポート位置の、ボールから自ゴール方向への距離を passDistance の何倍とするか。 */
       backSupportDistanceFactor: number;
     };

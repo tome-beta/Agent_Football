@@ -111,14 +111,14 @@ export function resolveBallPossession(
       return;
     }
 
-    // タックルは必ず成功するわけではない。守備者の aggressiveness が高いほど成功率が上がる
+    // タックルは必ず成功するわけではない。守備者の technique が高いほど成功率が上がる
     // （役割分岐ではなくパラメータの違いがそのまま確率の差ににじみ出るようにする）。
     const tackleSuccessChance = Math.max(
       0,
       Math.min(
         1,
         config.ai.tackleSuccessChanceBase +
-          (stealer.params.aggressiveness - 0.5) * config.ai.tackleSuccessAggroSpread
+          (stealer.params.technique - 0.5) * config.ai.tackleSuccessTechniqueSpread
       )
     );
 

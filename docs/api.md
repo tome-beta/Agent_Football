@@ -35,14 +35,18 @@ type PlayerActionState =
 ```
 
 ### PlayerParams
-AI調整の中核となる5パラメータ。
-| フィールド | 意味 | 目安 |
-|---|---|---|
-| `speed` | 最高速度 [m/s] | 4.5〜7.5 |
-| `passAccuracy` | パス方向のブレの少なさ | 0.5〜1.0 |
-| `shootPower` | シュート成功率の係数 | 0.5〜1.0 |
-| `vision` | 視野角 [度] | 50〜150 |
-| `aggressiveness` | 攻撃志向の重み | 0.3〜0.9 |
+AI調整の中核となる9パラメータ。参考タイトル「カルチョビット」の公開パラメータ7種（キック／メンタル／スタミナ／フィジカル／スピード／テクニック／ジャンプ）に対応づけて設計している（詳細は `specification/カルチョビットmemo.md`）。
+| フィールド | 意味 | 目安 | カルチョビット対応 |
+|---|---|---|---|
+| `speed` | 最高速度 [m/s] | 4.5〜7.5 | スピード |
+| `passAccuracy` | パス方向のブレの少なさ | 0.5〜1.0 | キック（パス側。soccer-sim独自にshootPowerと分離） |
+| `shootPower` | シュート成功率の係数 | 0.5〜1.0 | キック（シュート側。soccer-sim独自にpassAccuracyと分離） |
+| `vision` | 視野角 [度] | 50〜150 | 対応なし（soccer-sim独自拡張） |
+| `mental` | 積極性・強気さ（プレス/ドリブル選択/シュート意欲/保持時間などを左右） | 0.3〜0.9 | メンタル |
+| `technique` | タックル成功率を左右する | 0.3〜0.9 | テクニック |
+| `stamina` | 型定義のみ。現状挙動には未反映（Phase 2で実装予定） | 0〜1 | スタミナ |
+| `physical` | 型定義のみ。現状挙動には未反映（Phase 2で実装予定） | 0〜1 | フィジカル |
+| `jump` | 型定義のみ。ヘディング未実装のため現状未使用 | 0〜1 | ジャンプ |
 
 ### Player
 ```ts
@@ -107,7 +111,7 @@ interface MatchResult { scoreA: number; scoreB: number; winner: TeamSide | "Draw
 | `player` | `maxSpeed` / `radius` | 選手の速度上限・半径 |
 | `ball` | `radius` / `friction` / `stopThreshold` / `maxSpeed` | `friction` は**毎秒の速度保持率**。適用は `friction^dt` |
 | `ai` | `ballControlDistance` / `trapDistance` / `trapMaxBallSpeed` / `tackleDistance` / `passDistance` / `shootDistance` / `shootProbability` / `visionDistance` / `passSpeed` / `shootSpeed` / `aimErrorMaxDeg` / `moveStopThreshold` / `passSpeedDistanceFactor` / `markedRadiusFactor` / `positioning` | 各種判定距離・確率。`visionDistance` は選手が味方/敵/ボールを認識できる距離（視野角は `PlayerParams.vision`）、`passSpeed`/`shootSpeed` はキックの基準初速、`aimErrorMaxDeg` は `passAccuracy`/`shootPower` が0のときの最大キック角度誤差、`moveStopThreshold` は `moveToward` の到達判定距離、`passSpeedDistanceFactor` はパス距離1mあたりの初速上乗せ量、`markedRadiusFactor` はパス候補のマーク済み判定距離（`tackleDistance` の倍率）、`positioning` は非保持時の力の合成モデルの重み（下記） |
-| `ai.positioning` | `ballPullWeight` / `repulsionWeight` / `minSpacing` / `coverWeight` / `pressWeight` / `pressDistance` / `surroundRadius` / `pressChanceBase` / `pressChanceSpread` / `receivingDistanceFactor` / `markerAvoidRangeFactor` / `markerAvoidStepDistance` | `computeTargetPosition`（`src/game/player.ts`、マイルストーンH）が使う重み。`ballPullWeight` は home からボールへ追従する上限距離の係数（`distance(home, ownGoal)` に掛ける）、`repulsionWeight`/`minSpacing` は味方同士が近すぎるときの反発、`coverWeight` はボール-自ゴール線への吸着ブレンド率、`pressWeight`/`pressDistance` は敵ボール保持者への詰め寄り（`aggressiveness` と掛け合わせる）。`surroundRadius` は複数人でプレスする際に敵保持者を囲むリングの半径（`computeApproachPoint`）、`pressChanceBase`/`pressChanceSpread` は毎ターン実際に詰め寄るかどうかを `aggressiveness` に応じた確率で決めるための基準値と振れ幅、`receivingDistanceFactor`/`markerAvoidRangeFactor`/`markerAvoidStepDistance` は非保持時の受け手ポジション計算（ボールから攻撃ゴール方向への距離・敵マーカー回避判定範囲・回避時の横ずれ距離） |
+| `ai.positioning` | `ballPullWeight` / `repulsionWeight` / `minSpacing` / `coverWeight` / `pressWeight` / `pressDistance` / `surroundRadius` / `pressChanceBase` / `pressChanceSpread` / `receivingDistanceFactor` / `markerAvoidRangeFactor` / `markerAvoidStepDistance` | `computeTargetPosition`（`src/game/player.ts`、マイルストーンH）が使う重み。`ballPullWeight` は home からボールへ追従する上限距離の係数（`distance(home, ownGoal)` に掛ける）、`repulsionWeight`/`minSpacing` は味方同士が近すぎるときの反発、`coverWeight` はボール-自ゴール線への吸着ブレンド率、`pressWeight`/`pressDistance` は敵ボール保持者への詰め寄り（`mental` と掛け合わせる）。`surroundRadius` は複数人でプレスする際に敵保持者を囲むリングの半径（`computeApproachPoint`）、`pressChanceBase`/`pressChanceSpread` は毎ターン実際に詰め寄るかどうかを `mental` に応じた確率で決めるための基準値と振れ幅、`receivingDistanceFactor`/`markerAvoidRangeFactor`/`markerAvoidStepDistance` は非保持時の受け手ポジション計算（ボールから攻撃ゴール方向への距離・敵マーカー回避判定範囲・回避時の横ずれ距離） |
 | `team` | `roleParams` / `formation` / `tactics` / `names` | 役割別パラメータ・定位置・戦術・チーム名 |
 | `match` | `turnsPerHalf` / `goalScoredTurns` / `restartSetupTurns` / `kickoffTurns` | ハーフのターン数と各フェーズの滞在ターン数 |
 | `physics` | `dt` | 1ターンの秒数 |

@@ -29,8 +29,8 @@ export const defaultConfig: GameConfig = {
     trapDistance: 2.0, // トラップして保持に移れる距離 [m]（キック距離より広め）
     trapMaxBallSpeed: 5, // この速度[m/s]を超えるボールはトラップ失敗
     tackleDistance: 1.0, // 相手保持者からボールを奪える距離 [m]
-    tackleSuccessChanceBase: 0.6, // aggressiveness=0.5の守備者がタックルを試みたときの成功確率
-    tackleSuccessAggroSpread: 0.4, // aggressivenessの偏差1あたりの成功率変化幅（高いほど奪いやすい）
+    tackleSuccessChanceBase: 0.6, // technique=0.5の守備者がタックルを試みたときの成功確率
+    tackleSuccessTechniqueSpread: 0.4, // techniqueの偏差1あたりの成功率変化幅（高いほど奪いやすい）
     possessorStunTurns: 5, // 奪われた側が止まるターン数（5ターン=0.5秒）
     defenderStunTurns: 5, // かわされた守備者が止まるターン数
     interceptDistance: 1.5, // パス/シュートの軌跡（線分）にインターセプトを試みる距離 [m]（速度制限なし）
@@ -39,20 +39,20 @@ export const defaultConfig: GameConfig = {
     interceptChance: 0.2, // 軌跡ちょうど上にいるときの成功確率上限（距離に応じて0まで減衰）
     passDistance: 15, // パス受け手候補として検討する距離 [m]
     shootDistance: 20, // シュートを検討し始める距離 [m]
-    shootProbability: 0.3, // シュート成功率の基準係数（shootPower・aggressivenessと掛け合わせる）
+    shootProbability: 0.3, // シュート成功率の基準係数（shootPower・mentalと掛け合わせる）
     // features_1 §8.1 の視野距離レンジ(10〜25m)の中間よりやや広め。
     visionDistance: 22,
     passSpeed: 10, // パスの基準初速 [m/s]
     shootSpeed: 22, // シュートの基準初速上限 [m/s]（shootPowerを掛けて減衰させる）
     aimErrorMaxDeg: 12, // passAccuracy/shootPowerが0のときの最大キック角度誤差 [度]
-    dribbleChanceBase: 0.15, // aggressiveness=0.5, vision=90度の選手が受け手ありでもドリブルを選ぶ基準確率
-    dribbleChanceAggroSpread: 0.4, // aggressivenessの偏差1あたりの確率変化幅（高いほど自分で運びたがる）
+    dribbleChanceBase: 0.15, // mental=0.5, vision=90度の選手が受け手ありでもドリブルを選ぶ基準確率
+    dribbleChanceMentalSpread: 0.4, // mentalの偏差1あたりの確率変化幅（高いほど自分で運びたがる）
     dribbleChanceVisionSpread: 0.3, // vision(/180)の偏差1あたりの確率変化幅（広いほど受け手を見つけやすくパスを選びやすい）
     offsideRiskDribbleBoost: 0.5, // 選んだ受け手がオフサイドの場合にdribbleChanceへ加算する量
     keepDribbleEvasionBase: 0.5, // マークされている孤立時ドリブルの回避方向ブレンド率の基準値
-    keepDribbleEvasionAggroSpread: 0.6, // aggressivenessの偏差1あたりの変化幅（高いほど回避せずゴール優先）
-    minHoldTurnsBase: 4, // aggressiveness=0.5の選手が最低ドリブル継続する保持ターン数（4ターン=0.4秒）
-    minHoldTurnsAggroSpread: 4, // aggressivenessの偏差1あたりの変化幅（高いほど長く持ち運ぶ）
+    keepDribbleEvasionMentalSpread: 0.6, // mentalの偏差1あたりの変化幅（高いほど回避せずゴール優先）
+    minHoldTurnsBase: 4, // mental=0.5の選手が最低ドリブル継続する保持ターン数（4ターン=0.4秒）
+    minHoldTurnsMentalSpread: 4, // mentalの偏差1あたりの変化幅（高いほど長く持ち運ぶ）
     moveStopThreshold: 0.1, // この距離未満まで近づいたら移動を止める [m]
     passSpeedDistanceFactor: 0.3, // パス距離1mあたりの初速上乗せ量 [m/s]
     markedRadiusFactor: 2, // パス候補のマーク判定距離 = tackleDistance * この倍率
@@ -71,11 +71,11 @@ export const defaultConfig: GameConfig = {
       // 確実に攻撃側の得点で終わり、先にキックオフするチームが全勝する結果になっていた
       // （20戦20勝を確認）。この値では20戦14勝4敗2分まで改善する。
       coverWeight: 1, // ボール-自ゴール線への吸着ブレンド率
-      pressWeight: 2, // 敵ボール保持者への詰め寄りブレンド率（aggressivenessと掛け合わせる）
+      pressWeight: 2, // 敵ボール保持者への詰め寄りブレンド率（mentalと掛け合わせる）
       pressDistance: 20, // この距離以内の敵保持者にのみ詰め寄る [m]
       surroundRadius: 2.5, // 複数人で詰め寄るとき、敵保持者を囲むリングの半径 [m]
-      pressChanceBase: 0.5, // aggressiveness=0.5 の選手が毎ターン実際に詰め寄る確率
-      pressChanceSpread: 1.0, // aggressiveness の偏差1あたりの確率変化幅
+      pressChanceBase: 0.5, // mental=0.5 の選手が毎ターン実際に詰め寄る確率
+      pressChanceSpread: 1.0, // mental の偏差1あたりの確率変化幅
       lastManPressSuppression: 0.2, // 最終ライン（自ゴールに最も近い選手）のpressChanceに掛ける係数
       goalCoverDangerDistance: 20, // この距離[m]以内でゴール前カバーの横方向オフセットが効き始める
       goalMouthSpreadDistance: 3, // 危険ゾーン内でhome.xの符号方向へずらす最大距離[m]（goalWidth 7.32の半分弱）
@@ -88,8 +88,8 @@ export const defaultConfig: GameConfig = {
       // 急落する非線形な閾値を発見した。安全マージンを見て閾値からやや離れた0.15を採用
       // （平均得点5.20、勝敗分布も無効時に近い）。
       receivingHomeBlendY: 0.15, // 受け手ポジションのyをhomePos.yとブレンドする比率
-      backSupportChanceBase: 0.15, // aggressiveness=0.5の選手が毎ターンバックサポートを選ぶ基準確率
-      backSupportAggroSpread: 0.5, // aggressivenessの偏差1あたりの確率変化幅（低いほど後方支援に回りやすい）
+      backSupportChanceBase: 0.15, // mental=0.5の選手が毎ターンバックサポートを選ぶ基準確率
+      backSupportMentalSpread: 0.5, // mentalの偏差1あたりの確率変化幅（低いほど後方支援に回りやすい）
       backSupportDistanceFactor: 0.5, // バックサポート位置の距離 = passDistance * この係数
     },
     offside: {
@@ -136,9 +136,40 @@ export const defaultConfig: GameConfig = {
   team: {
     // features_1 §8.2 のサンプル選手データに準拠。
     roleParams: {
-      FW: { speed: 7.2, passAccuracy: 0.7, shootPower: 0.9, vision: 100, aggressiveness: 0.85 },
-      MF: { speed: 6.5, passAccuracy: 0.85, shootPower: 0.6, vision: 110, aggressiveness: 0.65 },
-      DF: { speed: 6.0, passAccuracy: 0.6, shootPower: 0.4, vision: 90, aggressiveness: 0.4 },
+      // technique/stamina/physical/jump は型のみの追加パラメータ（現状挙動未反映、Phase 2で実装予定）。
+      FW: {
+        speed: 7.2,
+        passAccuracy: 0.7,
+        shootPower: 0.9,
+        vision: 100,
+        mental: 0.85,
+        technique: 0.45,
+        stamina: 0.7,
+        physical: 0.6,
+        jump: 0.6,
+      },
+      MF: {
+        speed: 6.5,
+        passAccuracy: 0.85,
+        shootPower: 0.6,
+        vision: 110,
+        mental: 0.65,
+        technique: 0.6,
+        stamina: 0.8,
+        physical: 0.6,
+        jump: 0.6,
+      },
+      DF: {
+        speed: 6.0,
+        passAccuracy: 0.6,
+        shootPower: 0.4,
+        vision: 90,
+        mental: 0.4,
+        technique: 0.75,
+        stamina: 0.7,
+        physical: 0.7,
+        jump: 0.6,
+      },
     },
     // 自陣を基準にした比率。y = -1 が自ゴール、+1 が敵ゴール。
     formation: {

@@ -8,11 +8,15 @@ const ROLES: Role[] = ["FW", "MF", "DF"];
 
 /** [パラメータキー, ラベル, min, max, step] */
 const PARAM_SLIDERS: Array<[keyof PlayerParams, string, number, number, number]> = [
-  ["speed", "速度", 3, 9, 0.1],
-  ["passAccuracy", "パス精度", 0, 1, 0.05],
-  ["shootPower", "シュート力", 0, 1, 0.05],
+  ["speed", "スピード", 3, 9, 0.1],
+  ["passAccuracy", "キック(パス精度)", 0, 1, 0.05],
+  ["shootPower", "キック(シュート威力)", 0, 1, 0.05],
   ["vision", "視野(度)", 40, 160, 5],
-  ["aggressiveness", "積極性", 0, 1, 0.05],
+  ["mental", "メンタル", 0, 1, 0.05],
+  ["technique", "テクニック", 0, 1, 0.05],
+  ["stamina", "スタミナ(未使用)", 0, 1, 0.05],
+  ["physical", "フィジカル(未使用)", 0, 1, 0.05],
+  ["jump", "ジャンプ(未使用)", 0, 1, 0.05],
 ];
 
 /** 役割(FW/MF/DF)ごとに `PARAM_SLIDERS` のスライダー行を組み立てて `root` に追加し、入力要素への参照を返す。 */
@@ -75,7 +79,11 @@ function readConfigFromControls(
       passAccuracy: Number(inputs[role].passAccuracy.value),
       shootPower: Number(inputs[role].shootPower.value),
       vision: Number(inputs[role].vision.value),
-      aggressiveness: Number(inputs[role].aggressiveness.value),
+      mental: Number(inputs[role].mental.value),
+      technique: Number(inputs[role].technique.value),
+      stamina: Number(inputs[role].stamina.value),
+      physical: Number(inputs[role].physical.value),
+      jump: Number(inputs[role].jump.value),
     };
   }
 

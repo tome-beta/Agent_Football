@@ -178,6 +178,9 @@ describe("resolveBallPossession", () => {
   });
 
   it("lets an opponent within the tackle distance steal the ball", () => {
+    // technique の値に依存せずタックル成功を確定させる（このテストの主眼はタックル成功時の
+    // 挙動であり、成功確率そのものの検証ではない）。
+    const cfg: GameConfig = { ...config, ai: { ...config.ai, tackleSuccessChanceBase: 1 } };
     const holder = playerAt("A-FW", "A", { x: 0, y: 0 });
     const thief = playerAt("B-DF", "B", { x: config.ai.tackleDistance - 0.1, y: 0 });
     const ball: Ball = {
@@ -187,7 +190,7 @@ describe("resolveBallPossession", () => {
       lastKickerId: "A-FW",
     };
 
-    resolve([holder, thief], ball);
+    resolve([holder, thief], ball, { config: cfg });
     expect(ball.possessorId).toBe("B-DF");
     expect(ball.pos).toEqual(thief.pos);
     // 奪取ではボールを蹴っていないので lastKickerId は変わらない。
@@ -201,7 +204,7 @@ describe("resolveBallPossession", () => {
   it("stuns neither player when the tackle attempt fails", () => {
     const cfg: GameConfig = {
       ...config,
-      ai: { ...config.ai, tackleSuccessChanceBase: 0, tackleSuccessAggroSpread: 0 },
+      ai: { ...config.ai, tackleSuccessChanceBase: 0, tackleSuccessTechniqueSpread: 0 },
     };
     const holder = playerAt("A-FW", "A", { x: 0, y: 0 });
     const thief = playerAt("B-DF", "B", { x: cfg.ai.tackleDistance - 0.1, y: 0 });
@@ -233,11 +236,12 @@ describe("resolveBallPossession", () => {
   });
 
   it("steals at exactly the tackle distance", () => {
+    const cfg: GameConfig = { ...config, ai: { ...config.ai, tackleSuccessChanceBase: 1 } };
     const holder = playerAt("A-FW", "A", { x: 0, y: 0 });
     const thief = playerAt("B-DF", "B", { x: config.ai.tackleDistance, y: 0 });
     const ball: Ball = { ...ballAt({ x: 0, y: 0 }), status: "Possessed", possessorId: "A-FW" };
 
-    resolve([holder, thief], ball);
+    resolve([holder, thief], ball, { config: cfg });
     expect(ball.possessorId).toBe("B-DF");
   });
 
@@ -260,12 +264,13 @@ describe("resolveBallPossession", () => {
   });
 
   it("picks the nearest opponent when several can tackle", () => {
+    const cfg: GameConfig = { ...config, ai: { ...config.ai, tackleSuccessChanceBase: 1 } };
     const holder = playerAt("A-FW", "A", { x: 0, y: 0 });
     const nearThief = playerAt("B-DF", "B", { x: 0.2, y: 0 });
     const farThief = playerAt("B-MF", "B", { x: 0.8, y: 0 }, "MF");
     const ball: Ball = { ...ballAt({ x: 0, y: 0 }), status: "Possessed", possessorId: "A-FW" };
 
-    resolve([holder, farThief, nearThief], ball);
+    resolve([holder, farThief, nearThief], ball, { config: cfg });
     expect(ball.possessorId).toBe("B-DF");
   });
 

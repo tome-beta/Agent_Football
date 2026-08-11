@@ -20,8 +20,8 @@ describe("decideAction: possession", () => {
     state.ball.status = "Possessed";
     state.ball.possessorId = shooter.id;
 
-    // 高いshootPower/aggressivenessに上書きしてシュート成立を確実にする
-    shooter.params = { ...shooter.params, shootPower: 1, aggressiveness: 1 };
+    // 高いshootPower/mentalに上書きしてシュート成立を確実にする
+    shooter.params = { ...shooter.params, shootPower: 1, mental: 1 };
     config.ai.shootProbability = 1;
 
     decideAction(shooter, state, config);
@@ -87,7 +87,7 @@ describe("decideAction: possession", () => {
     config.ai.shootProbability = 0;
     // ドリブル継続を選ばせず必ずパスさせる（確率0を保証するため偏差項も0にする）。
     config.ai.dribbleChanceBase = 0;
-    config.ai.dribbleChanceAggroSpread = 0;
+    config.ai.dribbleChanceMentalSpread = 0;
     config.ai.dribbleChanceVisionSpread = 0;
     const state = createInitialState(config);
     const passer = state.teams.A.players.find((p) => p.role === "MF")!;
@@ -118,7 +118,7 @@ describe("decideAction: possession", () => {
     config.ai.shootProbability = 0;
     // ドリブル継続を選ばせず必ずパスさせる（確率0を保証するため偏差項も0にする）。
     config.ai.dribbleChanceBase = 0;
-    config.ai.dribbleChanceAggroSpread = 0;
+    config.ai.dribbleChanceMentalSpread = 0;
     config.ai.dribbleChanceVisionSpread = 0;
     const state = createInitialState(config);
     const passer = state.teams.A.players.find((p) => p.role === "MF")!;
@@ -482,15 +482,15 @@ describe("decideAction: positioning force composition (milestone H)", () => {
     expect(defender.vel.x).toBeLessThan(0);
   });
 
-  it("presses harder toward the opponent ball carrier when aggressiveness is higher", () => {
+  it("presses harder toward the opponent ball carrier when mental is higher", () => {
     const config = loadConfig({ random: { seed: 1 } });
 
-    function markingTargetDistanceAfterStep(aggressiveness: number): number {
+    function markingTargetDistanceAfterStep(mental: number): number {
       const state = createInitialState(config);
       const defender = state.teams.A.players.find((p) => p.role === "DF")!;
       const opponent = state.teams.B.players.find((p) => p.role === "FW")!;
       // defender 自身が最終ライン（自ゴールに最も近い選手）だと lastManPressSuppression が
-      // 効いてプレス力そのものが潰れ、aggressiveness の差を見るこのテストの意図と衝突する。
+      // 効いてプレス力そのものが潰れ、mental の差を見るこのテストの意図と衝突する。
       // 味方1人を defender よりさらに自ゴール寄りに置き、最終ライン判定から外す。
       let placedDeeper = false;
       for (const p of state.teams.A.players) {
@@ -499,7 +499,7 @@ describe("decideAction: positioning force composition (milestone H)", () => {
         placedDeeper = true;
       }
 
-      defender.params = { ...defender.params, aggressiveness };
+      defender.params = { ...defender.params, mental };
       defender.pos = { x: 5, y: -10 };
       opponent.pos = { x: 5, y: -5 };
       state.ball.pos = { ...opponent.pos };
@@ -514,7 +514,7 @@ describe("decideAction: positioning force composition (milestone H)", () => {
     const lowPress = markingTargetDistanceAfterStep(0.1);
     const highPress = markingTargetDistanceAfterStep(1.0);
 
-    // aggressiveness が高いほど、詰め寄る力が強く敵に近づくはず。
+    // mental が高いほど、詰め寄る力が強く敵に近づくはず。
     expect(highPress).toBeLessThan(lowPress);
   });
 

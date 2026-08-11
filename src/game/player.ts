@@ -193,7 +193,7 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
   if (distToGoal <= config.ai.shootDistance) {
     const successChance = Math.max(
       0,
-      Math.min(1, config.ai.shootProbability * player.params.shootPower * player.params.aggressiveness)
+      Math.min(1, config.ai.shootProbability * player.params.shootPower * player.params.mental)
     );
     if (chance(state, successChance)) {
       player.state = "Shooting";
@@ -208,11 +208,11 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
   // ボールを受け取った直後の数ターンはパス判断自体を行わず、必ずドリブル継続にする。
   // これがないと毎フレーム独立にパス判定をやり直すため、受け取った1フレーム目で
   // いきなりパスしてしまい、ドリブルではなく「自分にパスして自分で拾う」ような
-  // 一瞬の保持に見えていた（ユーザー指摘、2026-08-08）。aggressiveness が高い選手ほど
+  // 一瞬の保持に見えていた（ユーザー指摘、2026-08-08）。mental が高い選手ほど
   // 長く持ち運びたがる形にする。
   const minHoldTurns = Math.max(
     0,
-    config.ai.minHoldTurnsBase + (player.params.aggressiveness - 0.5) * config.ai.minHoldTurnsAggroSpread
+    config.ai.minHoldTurnsBase + (player.params.mental - 0.5) * config.ai.minHoldTurnsMentalSpread
   );
   const receiver = ball.possessionTurns < minHoldTurns ? undefined : selectPassReceiver(player, state, config);
   if (receiver !== undefined) {
@@ -226,14 +226,14 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
       config.ai.offside.avoidanceEnabled &&
       isOffside(receiver.pos, player.team, oppTeamForRisk, player.pos, config);
 
-    // 受け手がいても、役割ではなく aggressiveness/vision に応じた確率であえてドリブルを選ぶことがある。
-    // aggressiveness が高いほど自分で運びたがり、vision が広いほど受け手を見つけやすくパスを選びやすい。
+    // 受け手がいても、役割ではなく mental/vision に応じた確率であえてドリブルを選ぶことがある。
+    // mental が高いほど自分で運びたがり、vision が広いほど受け手を見つけやすくパスを選びやすい。
     const dribbleChance = Math.max(
       0,
       Math.min(
         1,
         config.ai.dribbleChanceBase +
-          (player.params.aggressiveness - 0.5) * config.ai.dribbleChanceAggroSpread -
+          (player.params.mental - 0.5) * config.ai.dribbleChanceMentalSpread -
           (player.params.vision / 180 - 0.5) * config.ai.dribbleChanceVisionSpread +
           (receiverIsOffsideRisk ? config.ai.offsideRiskDribbleBoost : 0)
       )
@@ -270,7 +270,7 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
   // マークされている（敵が近い）ときの方向づけ。敵を抜いて前進する「打開」ではなく、
   // 味方が受け手ポジションへ動くのを待つ「キープ」が狙いなので、速度は上げずマーカーから
   // 離れる方向をゴール方向へブレンドするだけに留める（独走力を上げて過去の非線形崩壊
-  // ［TODO.md参照］を再現しないため）。ブレンド比率は aggressiveness で連続的に決まり、
+  // ［TODO.md参照］を再現しないため）。ブレンド比率は mental で連続的に決まり、
   // 高い選手ほど強引にゴール方向を維持し、低い選手ほどキープを優先する
   // （ユーザー指摘、2026-08-09: 役割固定ではなくパラメータで選ばせたい）。
   const oppTeam = state.teams[opposite(player.team)];
@@ -288,7 +288,7 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
           Math.min(
             1,
             config.ai.keepDribbleEvasionBase -
-              (player.params.aggressiveness - 0.5) * config.ai.keepDribbleEvasionAggroSpread
+              (player.params.mental - 0.5) * config.ai.keepDribbleEvasionMentalSpread
           )
         );
         const blend = evasionWeight * Math.min(1, markingPressure / markingRange);
@@ -461,7 +461,7 @@ function computeBackSupportTarget(
  *   1. ballAttraction: home からボール方向へ、distance(home, ownGoal) * ballPullWeight を
  *      上限に追従する（home が自ゴールから遠い＝FW寄りの選手ほど大きく前に出る）
  *   2. coverBias: ボール-自ゴール間の線上へ coverWeight の比率で吸着する
- *   3. pressure: pressDistance 以内の敵ボール保持者へ、aggressiveness に応じて詰め寄る
+ *   3. pressure: pressDistance 以内の敵ボール保持者へ、mental に応じて詰め寄る
  *
  * 敵がボールを持っていない場合（味方保持 or フリーボール）:
  *   ボールから攻撃ゴール方向へ passDistance の6割ほど進んだ「受け手ポジション」を狙い、
@@ -515,12 +515,12 @@ function computeTargetPosition(player: Player, state: GameState, config: GameCon
 
     const dCarrier = distance(player.pos, carrier.pos);
     if (dCarrier <= p.pressDistance) {
-      // 詰め寄るかどうかは役割ではなく aggressiveness に応じた確率で毎ターン決める。
-      // これにより同じ場面でも選手の反応が毎回変わり、かつ aggressiveness が高い選手ほど
+      // 詰め寄るかどうかは役割ではなく mental に応じた確率で毎ターン決める。
+      // これにより同じ場面でも選手の反応が毎回変わり、かつ mental が高い選手ほど
       // 積極的に前へ出る傾向がにじみ出る（features_1/開発メモの「役割分岐にしない」方針に沿う）。
       let pressChance = Math.max(
         0,
-        Math.min(1, p.pressChanceBase + (player.params.aggressiveness - 0.5) * p.pressChanceSpread)
+        Math.min(1, p.pressChanceBase + (player.params.mental - 0.5) * p.pressChanceSpread)
       );
       // pressDistance がピッチ規模に対して広いため、3人全員が同時に詰め寄り候補になり
       // ゴール前のカバーが誰もいなくなる場面が頻発していた（ユーザー指摘、2026-08-08）。
@@ -531,7 +531,7 @@ function computeTargetPosition(player: Player, state: GameState, config: GameCon
         pressChance *= p.lastManPressSuppression;
       }
       if (chance(state, pressChance)) {
-        const strength = p.pressWeight * player.params.aggressiveness;
+        const strength = p.pressWeight * player.params.mental;
         target = add(target, scale(sub(computeApproachPoint(player, carrier, myTeam, own, p), target), strength));
       }
     }
@@ -540,12 +540,12 @@ function computeTargetPosition(player: Player, state: GameState, config: GameCon
 
     // 味方保持中/フリーボール時、受け手ポジションは常にボールより前方にしか生まれない
     // 構造だと、保持者が孤立していてもバックパスという選択肢自体が存在しなかった
-    // （ユーザー指摘、2026-08-08）。aggressiveness が低い選手ほど、前進した受け手位置
+    // （ユーザー指摘、2026-08-08）。mental が低い選手ほど、前進した受け手位置
     // ではなくボールより自ゴール側の「バックサポート」位置を目指す確率を毎ターン振り、
     // 役割分岐ではなくパラメータの違いがそのまま前方/後方志向の差ににじみ出るようにする。
     const backSupportChance = Math.max(
       0,
-      Math.min(1, p.backSupportChanceBase - (player.params.aggressiveness - 0.5) * p.backSupportAggroSpread)
+      Math.min(1, p.backSupportChanceBase - (player.params.mental - 0.5) * p.backSupportMentalSpread)
     );
     if (chance(state, backSupportChance)) {
       target = computeBackSupportTarget(player, home, ball.pos, own, oppTeam, config);
