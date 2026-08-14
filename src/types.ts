@@ -17,6 +17,32 @@ export type PlayerActionState =
   | "Marking"
   | "MovingToSpace";
 
+/**
+ * 非保持時の複数ターンにまたがる「意図」（`specification/features_intent_state_machine.md`）。
+ * マイルストーンNの段階1では `ChaseLooseBall` のみが実際にこの機構で管理され、
+ * それ以外は将来の段階向けの予約値（現状は割り当てられない）。
+ */
+export type PlayerIntentType =
+  | "Idle"
+  | "Support"
+  | "BackSupport"
+  | "LateralSupport"
+  | "WaitOnside"
+  | "RunBehind"
+  | "Press"
+  | "Cover"
+  | "ChaseLooseBall";
+
+export interface PlayerIntent {
+  type: PlayerIntentType;
+  /** この意図に切り替わった `GameState.turn`。 */
+  startedAtTurn: number;
+  /** この意図に切り替わってから、最低限維持するターン数（段階1では未使用。将来の段階向け）。 */
+  minDurationTurns: number;
+  /** この意図に切り替わってから、これを超えたターン数が経過したら強制的に再判断する。 */
+  maxDurationTurns: number;
+}
+
 export interface PlayerParams {
   /** カルチョビット「スピード」相当。 */
   speed: number;
@@ -48,6 +74,7 @@ export interface Player {
   pos: Vec2;
   vel: Vec2;
   state: PlayerActionState;
+  intent: PlayerIntent;
   /**
    * タックルで奪われた直後（旧保持者）、またはタックルに失敗してかわされた直後（守備者）に
    * 残っている「怯み」ターン数。0より大きい間は decideAction が通常の意思決定をスキップし
@@ -402,6 +429,15 @@ export interface GameConfig {
          */
         markingWeight: number;
       };
+    };
+    /** 意図（PlayerIntent）ベース状態遷移（マイルストーンN）関連の設定。 */
+    intent: {
+      /**
+       * ChaseLooseBall 意図に切り替わってから、これを超えたターン数が経過したら
+       * （ボールに追いつけていなくても）強制的に再判断する。フリーボールを延々
+       * 追い続けて他の判断（受け手ポジションへ戻る等）に切り替われなくなるのを防ぐ。
+       */
+      chaseLooseBallMaxDurationTurns: number;
     };
   };
   team: {

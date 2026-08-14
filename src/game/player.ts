@@ -21,6 +21,7 @@ export function createPlayer(
     pos: { ...homePos },
     vel: { x: 0, y: 0 },
     state: "Idle",
+    intent: { type: "Idle", startedAtTurn: 0, minDurationTurns: 0, maxDurationTurns: 0 },
     stunTurns: 0,
   };
 }
@@ -654,21 +655,49 @@ function decideSupportAction(player: Player, state: GameState, config: GameConfi
   moveToward(player, computeTargetPosition(player, state, config), config);
 }
 
+/**
+ * マイルストーンN-1（`specification/features_intent_state_machine.md`）: `ChaseLooseBall`
+ * 意図のみを Player.intent 機構で管理する最小検証ステップ。intentの「種別」だけを固定し、
+ * 実際の目標地点（ここでは ball.pos）は毎ターン再計算する（設計上の判断: targetをintentに
+ * 持たせるとボール追従が古くなるため）。
+ *
+ * 既にChaseLooseBall中なら、ボールに追いついた（reachedTarget）か
+ * chaseLooseBallMaxDurationTurns 経過（intentExpired）するまで、毎タームの
+ * 「誰が最寄りか」の再計算をスキップして同じ選手が追い続ける（役割の毎ターム反転防止）。
+ */
 function decideFreeBallAction(player: Player, state: GameState, config: GameConfig): void {
   const { ball } = state;
   const myTeam = state.teams[player.team];
 
-  let nearestTeammate = player;
-  let nearestDist = distance(player.pos, ball.pos);
-  for (const p of myTeam.players) {
-    const d = distance(p.pos, ball.pos);
-    if (d < nearestDist) {
-      nearestDist = d;
-      nearestTeammate = p;
+  const reachedBall = distance(player.pos, ball.pos) < config.ai.moveStopThreshold;
+  const intentExpired =
+    player.intent.type === "ChaseLooseBall" &&
+    state.turn - player.intent.startedAtTurn >= player.intent.maxDurationTurns;
+
+  if (player.intent.type !== "ChaseLooseBall" || reachedBall || intentExpired) {
+    let nearestTeammate = player;
+    let nearestDist = distance(player.pos, ball.pos);
+    for (const p of myTeam.players) {
+      const d = distance(p.pos, ball.pos);
+      if (d < nearestDist) {
+        nearestDist = d;
+        nearestTeammate = p;
+      }
     }
+
+    const shouldChase =
+      nearestTeammate.id === player.id && distance(player.pos, ball.pos) <= config.ai.visionDistance;
+    player.intent = shouldChase
+      ? {
+          type: "ChaseLooseBall",
+          startedAtTurn: state.turn,
+          minDurationTurns: 0,
+          maxDurationTurns: config.ai.intent.chaseLooseBallMaxDurationTurns,
+        }
+      : { type: "Idle", startedAtTurn: state.turn, minDurationTurns: 0, maxDurationTurns: 0 };
   }
 
-  if (nearestTeammate.id === player.id && distance(player.pos, ball.pos) <= config.ai.visionDistance) {
+  if (player.intent.type === "ChaseLooseBall") {
     player.state = "BallTracking";
     moveToward(player, ball.pos, config);
   } else {

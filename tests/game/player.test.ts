@@ -468,6 +468,33 @@ describe("decideAction: non-possessor", () => {
     // チームAの攻撃方向は+y。定位置のままなら vel はほぼ0のはず。
     expect(far.vel.y).toBeGreaterThan(0);
   });
+
+  it("keeps ChaseLooseBall intent once committed even if another teammate briefly becomes nearer", () => {
+    // マイルストーンN-1の回帰テスト: 最寄り判定を毎ターン素で振り直すと、拮抗した2人の
+    // 間で「追う選手」がターンごとに入れ替わりうる（フラフラの一因）。intent化により、
+    // 一度 ChaseLooseBall にコミットした選手は、ボールに追いつくか
+    // chaseLooseBallMaxDurationTurns を超えるまで役割を保持し続けるべき。
+    const config = loadConfig({ random: { seed: 1 } });
+    const state = createInitialState(config);
+    const chaser = state.teams.A.players.find((p) => p.role === "FW")!;
+    const rival = state.teams.A.players.find((p) => p.role === "MF")!;
+
+    state.ball.pos = { x: chaser.pos.x + 1, y: chaser.pos.y };
+    state.ball.status = "Free";
+    state.ball.possessorId = null;
+
+    decideAction(chaser, state, config);
+    expect(chaser.intent.type).toBe("ChaseLooseBall");
+
+    // 次のターン、ライバルの方がボールにわずかに近くなっても、コミット済みのchaserは
+    // 引き続きChaseLooseBallのままであるべき（ボールへ追いつく/期限切れまで）。
+    rival.pos = { x: state.ball.pos.x + 0.01, y: state.ball.pos.y };
+    state.turn += 1;
+
+    decideAction(chaser, state, config);
+    expect(chaser.intent.type).toBe("ChaseLooseBall");
+    expect(chaser.state).toBe("BallTracking");
+  });
 });
 
 describe("decideAction: positioning force composition (milestone H)", () => {

@@ -136,6 +136,14 @@ export const defaultConfig: GameConfig = {
         markingWeight: 1, // マーク（敵接近）1mあたりのペナルティ
       },
     },
+    intent: {
+      // フリーボールを最寄りとして追い始めてから、追いつけなくても強制的に再判断する
+      // までのターン数（マイルストーンN-1）。ball.status==="Free" が続く限り毎ターン
+      // decideFreeBallAction が呼ばれるため、これがないと追いつけない間ずっと
+      // ChaseLooseBall のままになり得る。visionDistance圏内からの追跡なので、
+      // 通常はこれより先にボールへ追いつくか、他選手が拾って"Free"でなくなる想定。
+      chaseLooseBallMaxDurationTurns: 5, // 5ターン=0.5秒
+    },
   },
   team: {
     // features_1 §8.2 のサンプル選手データに準拠。
