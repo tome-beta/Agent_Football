@@ -82,6 +82,7 @@ export const defaultConfig: GameConfig = {
       goalMouthSpreadDistance: 3, // 危険ゾーン内でhome.xの符号方向へずらす最大距離[m]（goalWidth 7.32の半分弱）
       goalRecallWeight: 0.6, // 危険ゾーン内でtarget.yをown.yへ直接引き寄せる強さ（dangerと掛け合わせる）
       receivingDistanceFactor: 0.6, // 受け手ポジションの距離 = passDistance * この係数
+      receivingDistanceMentalSpread: 0.15, // mentalの偏差1あたりreceivingDistanceFactorをどれだけ振るか（高いほど遠くへ飛び出す）
       markerAvoidRangeFactor: 0.5, // マーカー回避判定の範囲 = passDistance * この係数
       markerAvoidStepDistance: 3, // マーカー回避時に横へずれる距離 [m]
       // 0/0.05/0.1/0.15/0.2/0.3/0.5 を20試合ずつ比較（balance-check、2026-08-08）。
@@ -92,9 +93,11 @@ export const defaultConfig: GameConfig = {
       backSupportChanceBase: 0.15, // mental=0.5の選手が毎ターンバックサポートを選ぶ基準確率
       backSupportMentalSpread: 0.5, // mentalの偏差1あたりの確率変化幅（低いほど後方支援に回りやすい）
       backSupportDistanceFactor: 0.5, // バックサポート位置の距離 = passDistance * この係数
+      backSupportDistanceMentalSpread: 0.15, // mentalの偏差1あたりbackSupportDistanceFactorをどれだけ振るか（低いほど深く下がる）
       lateralSupportChanceBase: 0.25, // vision=90度の選手が毎ターン横サポートを選ぶ基準確率
       lateralSupportVisionSpread: 0.5, // visionの偏差1あたりの確率変化幅（広いほど選びやすい）
       lateralSupportDistanceFactor: 0.6, // 横サポート位置の距離 = passDistance * この係数
+      lateralSupportDistanceVisionSpread: 0.15, // visionの偏差1あたりlateralSupportDistanceFactorをどれだけ振るか（広いほど大きく開く）
     },
     offside: {
       // ステップ1（AI回避）を有効化すると selectPassReceiver/computeTargetPosition

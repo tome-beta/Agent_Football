@@ -337,6 +337,13 @@ export interface GameConfig {
       goalRecallWeight: number;
       /** 受け手ポジション（ボールから攻撃ゴール方向）の距離を passDistance の何倍とするか。 */
       receivingDistanceFactor: number;
+      /**
+       * mental の偏差1あたり receivingDistanceFactor をどれだけ振るか（高いほど遠くへ
+       * 飛び出す）。固定係数のままだと全選手がボールから常にほぼ同じ距離を取り、
+       * 「同じ辺の長さの三角形」を維持しているように見えてしまう問題への対策
+       * （ユーザー指摘、2026-08-14）。
+       */
+      receivingDistanceMentalSpread: number;
       /** 受け手ポジション付近の敵マーカーを回避判定する範囲を passDistance の何倍とするか。 */
       markerAvoidRangeFactor: number;
       /** マーカー回避時に横へずれる距離 [m]。 */
@@ -362,6 +369,8 @@ export interface GameConfig {
       backSupportMentalSpread: number;
       /** バックサポート位置の、ボールから自ゴール方向への距離を passDistance の何倍とするか。 */
       backSupportDistanceFactor: number;
+      /** mental の偏差1あたり backSupportDistanceFactor をどれだけ振るか（低いほど深く下がる）。 */
+      backSupportDistanceMentalSpread: number;
       /**
        * 味方保持中、前進もバックサポートも選ばなかった場合に、ボールとほぼ同じ前進度を
        * 保ったまま逆サイドへ開く「横サポート」を目指す基準確率（vision = 90度のときの値）。
@@ -374,6 +383,8 @@ export interface GameConfig {
       lateralSupportVisionSpread: number;
       /** 横サポート位置の、home.x と逆サイドへ開く距離を passDistance の何倍とするか。 */
       lateralSupportDistanceFactor: number;
+      /** vision の偏差（vision/180を基準に0.5からの差）1あたり lateralSupportDistanceFactor をどれだけ振るか（広いほど大きく開く）。 */
+      lateralSupportDistanceVisionSpread: number;
     };
     /** オフサイド判定（ステップ1: AI回避。ステップ2: 反則としてのターンオーバー処理）。 */
     offside: {
