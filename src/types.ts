@@ -43,6 +43,14 @@ export interface PlayerIntent {
   maxDurationTurns: number;
 }
 
+/**
+ * `decideAction` に渡す任意コールバック。選手の `intent.type` が切り替わるたびに呼ばれる
+ * （`specification/選手思考の状態遷移を検討.md` 「第5段階：状態遷移ログを出す」）。
+ * `game` 層は `types` 以外に依存しないため、`simulation/logger.ts` の `Logger` 型を
+ * 直接参照せず、この関数型を経由して疎結合にする（`Simulator` 側で `Logger` に橋渡しする）。
+ */
+export type IntentChangeCallback = (playerId: string, from: PlayerIntentType, to: PlayerIntentType) => void;
+
 export interface PlayerParams {
   /** カルチョビット「スピード」相当。 */
   speed: number;

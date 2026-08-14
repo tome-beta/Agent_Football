@@ -646,6 +646,30 @@ describe("decideAction: non-possessor", () => {
     decideAction(defender, state, config);
     expect(defender.intent.type).not.toBe("Press");
   });
+
+  it("calls onIntentChange only when intent.type actually switches", () => {
+    // 状態遷移ログ（specification/選手思考の状態遷移を検討.md 第5段階）用のコールバック。
+    // intentが実際に切り替わったときだけ呼ばれ、同じ種別を維持している間は呼ばれないはず。
+    const config = loadConfig({ random: { seed: 1 } });
+    const state = createInitialState(config);
+    const chaser = state.teams.A.players.find((p) => p.role === "FW")!;
+
+    state.ball.pos = { x: chaser.pos.x + 1, y: chaser.pos.y };
+    state.ball.status = "Free";
+    state.ball.possessorId = null;
+
+    const changes: Array<{ playerId: string; from: string; to: string }> = [];
+    const onIntentChange = (playerId: string, from: string, to: string) => changes.push({ playerId, from, to });
+
+    decideAction(chaser, state, config, onIntentChange);
+    expect(changes).toEqual([{ playerId: chaser.id, from: "Idle", to: "ChaseLooseBall" }]);
+
+    // 同じターン内で意図が変わらない限り、以後は呼ばれないはず。
+    changes.length = 0;
+    state.turn += 1;
+    decideAction(chaser, state, config, onIntentChange);
+    expect(changes).toEqual([]);
+  });
 });
 
 describe("decideAction: positioning force composition (milestone H)", () => {

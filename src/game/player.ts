@@ -1,4 +1,15 @@
-import type { Player, PlayerIntentType, PlayerParams, Role, Team, TeamSide, Vec2, GameState, GameConfig } from "../types";
+import type {
+  Player,
+  PlayerIntentType,
+  PlayerParams,
+  Role,
+  Team,
+  TeamSide,
+  Vec2,
+  GameState,
+  GameConfig,
+  IntentChangeCallback,
+} from "../types";
 import { add, sub, scale, length, normalize, distance, clampMagnitude } from "./utils";
 import { kickBall } from "./ball";
 import { nextRandomRange, chance } from "./random";
@@ -500,7 +511,12 @@ function computeLateralSupportTarget(player: Player, home: Vec2, ballPos: Vec2, 
  *
  * 最後に、味方が minSpacing 未満に近づいていれば離れる方向へ補正する（teammateRepulsion）。
  */
-function computeTargetPosition(player: Player, state: GameState, config: GameConfig): Vec2 {
+function computeTargetPosition(
+  player: Player,
+  state: GameState,
+  config: GameConfig,
+  onIntentChange?: IntentChangeCallback
+): Vec2 {
   const { ball } = state;
   const oppTeam = state.teams[opposite(player.team)];
   const carrier = ball.possessorId !== null ? oppTeam.players.find((o) => o.id === ball.possessorId) : undefined;
@@ -509,8 +525,8 @@ function computeTargetPosition(player: Player, state: GameState, config: GameCon
   // マイルストーンN-4/N-2でintent機構に移した。repulsion適用まで各resolve関数の
   // 中で完結させるため、ここでは早期returnするだけにする。
   return carrier !== undefined
-    ? resolveDefensiveIntentTarget(player, state, config, carrier)
-    : resolveSupportIntentTarget(player, state, config);
+    ? resolveDefensiveIntentTarget(player, state, config, carrier, onIntentChange)
+    : resolveSupportIntentTarget(player, state, config, onIntentChange);
 }
 
 type DefensiveFamilyIntentType = "Cover" | "Press";
@@ -628,12 +644,19 @@ function computeDefensiveIntentTarget(
   return applyTeammateRepulsion(player, target, myTeam, p);
 }
 
-function resolveDefensiveIntentTarget(player: Player, state: GameState, config: GameConfig, carrier: Player): Vec2 {
+function resolveDefensiveIntentTarget(
+  player: Player,
+  state: GameState,
+  config: GameConfig,
+  carrier: Player,
+  onIntentChange?: IntentChangeCallback
+): Vec2 {
   const isDefensiveFamily = DEFENSIVE_INTENT_TYPES.includes(player.intent.type);
   const expired = isDefensiveFamily && state.turn - player.intent.startedAtTurn >= player.intent.maxDurationTurns;
 
   if (!isDefensiveFamily || expired) {
     const type = chooseDefensiveIntentType(player, state, config, carrier);
+    if (onIntentChange && player.intent.type !== type) onIntentChange(player.id, player.intent.type, type);
     const { min, max } =
       type === "Press"
         ? { min: config.ai.intent.pressMinDurationTurns, max: config.ai.intent.pressMaxDurationTurns }
@@ -868,12 +891,18 @@ function intentDurationsFor(
   return { min: config.ai.intent.supportMinDurationTurns, max: config.ai.intent.supportMaxDurationTurns };
 }
 
-function resolveSupportIntentTarget(player: Player, state: GameState, config: GameConfig): Vec2 {
+function resolveSupportIntentTarget(
+  player: Player,
+  state: GameState,
+  config: GameConfig,
+  onIntentChange?: IntentChangeCallback
+): Vec2 {
   const isSupportFamily = SUPPORT_INTENT_TYPES.includes(player.intent.type);
   const expired = isSupportFamily && state.turn - player.intent.startedAtTurn >= player.intent.maxDurationTurns;
 
   if (!isSupportFamily || expired) {
     const type = chooseSupportIntentType(player, state, config);
+    if (onIntentChange && player.intent.type !== type) onIntentChange(player.id, player.intent.type, type);
     const { min, max } = intentDurationsFor(type, config);
     player.intent = { type, startedAtTurn: state.turn, minDurationTurns: min, maxDurationTurns: max };
   }
@@ -881,15 +910,25 @@ function resolveSupportIntentTarget(player: Player, state: GameState, config: Ga
   return computeSupportIntentTarget(player.intent.type as SupportFamilyIntentType, player, state, config);
 }
 
-function decideDefensiveAction(player: Player, state: GameState, config: GameConfig): void {
+function decideDefensiveAction(
+  player: Player,
+  state: GameState,
+  config: GameConfig,
+  onIntentChange?: IntentChangeCallback
+): void {
   player.state = "Marking";
-  moveToward(player, computeTargetPosition(player, state, config), config);
+  moveToward(player, computeTargetPosition(player, state, config, onIntentChange), config);
 }
 
 /** 味方がボールを持っている間の受け手ポジショニング。 */
-function decideSupportAction(player: Player, state: GameState, config: GameConfig): void {
+function decideSupportAction(
+  player: Player,
+  state: GameState,
+  config: GameConfig,
+  onIntentChange?: IntentChangeCallback
+): void {
   player.state = "MovingToSpace";
-  moveToward(player, computeTargetPosition(player, state, config), config);
+  moveToward(player, computeTargetPosition(player, state, config, onIntentChange), config);
 }
 
 /**
@@ -902,7 +941,12 @@ function decideSupportAction(player: Player, state: GameState, config: GameConfi
  * chaseLooseBallMaxDurationTurns 経過（intentExpired）するまで、毎タームの
  * 「誰が最寄りか」の再計算をスキップして同じ選手が追い続ける（役割の毎ターム反転防止）。
  */
-function decideFreeBallAction(player: Player, state: GameState, config: GameConfig): void {
+function decideFreeBallAction(
+  player: Player,
+  state: GameState,
+  config: GameConfig,
+  onIntentChange?: IntentChangeCallback
+): void {
   const { ball } = state;
   const myTeam = state.teams[player.team];
 
@@ -911,6 +955,11 @@ function decideFreeBallAction(player: Player, state: GameState, config: GameConf
     player.intent.type === "ChaseLooseBall" &&
     state.turn - player.intent.startedAtTurn >= player.intent.maxDurationTurns;
 
+  // 「最寄りかどうか」を再判定するのは、まだChaseLooseBall中でない/ボールに追いついた/
+  // 期限切れのときだけ。これを毎ターン無条件に行うと、既にSupport系intentを持っている
+  // 非最寄り選手（intent.typeが"ChaseLooseBall"以外）が毎ターンここを通過するたびに
+  // Idleへ強制リセットされてしまい、N-2で入れたSupport系のminDuration/maxDuration
+  // スティッキネスがフリーボール中だけ効かなくなるバグがあった（状態遷移ログ導入時に発見）。
   if (player.intent.type !== "ChaseLooseBall" || reachedBall || intentExpired) {
     let nearestTeammate = player;
     let nearestDist = distance(player.pos, ball.pos);
@@ -924,14 +973,26 @@ function decideFreeBallAction(player: Player, state: GameState, config: GameConf
 
     const shouldChase =
       nearestTeammate.id === player.id && distance(player.pos, ball.pos) <= config.ai.visionDistance;
-    player.intent = shouldChase
-      ? {
-          type: "ChaseLooseBall",
-          startedAtTurn: state.turn,
-          minDurationTurns: 0,
-          maxDurationTurns: config.ai.intent.chaseLooseBallMaxDurationTurns,
-        }
-      : { type: "Idle", startedAtTurn: state.turn, minDurationTurns: 0, maxDurationTurns: 0 };
+    if (shouldChase) {
+      if (onIntentChange && player.intent.type !== "ChaseLooseBall") {
+        onIntentChange(player.id, player.intent.type, "ChaseLooseBall");
+      }
+      player.intent = {
+        type: "ChaseLooseBall",
+        startedAtTurn: state.turn,
+        minDurationTurns: 0,
+        maxDurationTurns: config.ai.intent.chaseLooseBallMaxDurationTurns,
+      };
+    } else if (player.intent.type === "ChaseLooseBall") {
+      // ChaseLooseBallを卒業する。実際にどのSupport系intentへ移るかは、この関数の末尾で
+      // 呼ぶ computeTargetPosition -> resolveSupportIntentTarget に委ねる（ここで先に
+      // 具体的な型を決め打ちしない）。
+      if (onIntentChange) onIntentChange(player.id, player.intent.type, "Idle");
+      player.intent = { type: "Idle", startedAtTurn: state.turn, minDurationTurns: 0, maxDurationTurns: 0 };
+    }
+    // shouldChase===false かつ 現在の型が既にChaseLooseBall以外（Support系など）の場合は
+    // 何もしない。既存の意図（と残りduration）をそのまま維持し、reselectするかどうかは
+    // resolveSupportIntentTarget側のmin/maxDuration管理に委ねる。
   }
 
   if (player.intent.type === "ChaseLooseBall") {
@@ -942,7 +1003,7 @@ function decideFreeBallAction(player: Player, state: GameState, config: GameConf
     // 時間が長く続くため、ここが素の formationPos だと味方の大半が毎回そこへ引き戻されて
     // しまい、「受けるための動き」が起きる前に消えてしまっていた。
     player.state = "MovingToSpace";
-    moveToward(player, computeTargetPosition(player, state, config), config);
+    moveToward(player, computeTargetPosition(player, state, config, onIntentChange), config);
   }
 }
 
@@ -956,8 +1017,16 @@ function decideFreeBallAction(player: Player, state: GameState, config: GameConf
  *   - フリーボール … 最も近い味方だけが追いかけ、他は受け手ポジションへ（decideFreeBallAction）
  *
  * ここでは state と vel だけを更新する。実際の位置更新は stepPlayer が行う。
+ *
+ * @param onIntentChange 選手の `intent.type` が切り替わるたびに呼ばれる任意コールバック
+ *   （状態遷移ログ用。`specification/選手思考の状態遷移を検討.md` 第5段階）。
  */
-export function decideAction(player: Player, state: GameState, config: GameConfig): void {
+export function decideAction(
+  player: Player,
+  state: GameState,
+  config: GameConfig,
+  onIntentChange?: IntentChangeCallback
+): void {
   const { ball } = state;
 
   // タックルで奪われた/かわされた直後の怯み中は、その場で停止して通常の意思決定をしない。
@@ -979,16 +1048,16 @@ export function decideAction(player: Player, state: GameState, config: GameConfi
   const possessorIsOpponent = ball.possessorId !== null && !possessorIsTeammate;
 
   if (possessorIsOpponent) {
-    decideDefensiveAction(player, state, config);
+    decideDefensiveAction(player, state, config, onIntentChange);
     return;
   }
 
   if (possessorIsTeammate) {
-    decideSupportAction(player, state, config);
+    decideSupportAction(player, state, config, onIntentChange);
     return;
   }
 
-  decideFreeBallAction(player, state, config);
+  decideFreeBallAction(player, state, config, onIntentChange);
 }
 
 /** decideAction が設定した vel に従って選手を1ターン分動かし、ピッチ内に収める。 */

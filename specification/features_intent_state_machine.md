@@ -128,3 +128,9 @@ interface PlayerIntent {
 各段階を独立したTODOマイルストーンとし、balance-check/anomaly-huntで前後比較しながら進める（マイルストーンK/Lのオフサイド対策と同じ進め方）。
 
 **最もリスクが高いのは3.（オフサイド状態化）**——既存の連続スコアリングとの二重管理になりやすい。2.のSupport系intent化を先に実測してから3.に進むのが安全。
+
+## 状態遷移ログ（マイルストーンN-5）
+
+`選手思考の状態遷移を検討.md` 第5段階「状態遷移ログを出す」に対応。`decideAction` に任意コールバック `onIntentChange?: IntentChangeCallback`（`types.ts`）を追加し、`Player.intent.type` が実際に切り替わるたびに呼ばれる。`game` 層は `types` 以外に依存しない制約があるため、`simulation/logger.ts` の `Logger` 型を直接参照せず関数型で疎結合にし、`Simulator.step()` 側で `Logger.logIntentChange` に橋渡しする。
+
+**導入時に見つかった実バグ**: ログを見て初めて、`decideFreeBallAction` の再判定条件（`intent.type !== "ChaseLooseBall" || ...`）が緩すぎることが判明した。非追跡選手（intentが`Support`等）がフリーボール中にこの関数を通過するたび、無条件で`Idle`へ強制リセットされてから即座に再選択されており、`Support -> Idle -> Support` のような無意味な遷移が毎ターン発生していた。これはN-2で入れたはずの`minDurationTurns`/`maxDurationTurns`スティッキネスがフリーボール中だけ効いていなかったことを意味する。修正: `decideFreeBallAction` は自分がChaseLooseBallに入る/出るときだけ`intent`を書き換え、それ以外（既にSupport系intentを持っている非追跡選手）には一切触れないようにした。ログという観測手段を追加したことで、挙動を変えたつもりのないリファクタが実際には副作用を持っていたことが可視化された一例。
