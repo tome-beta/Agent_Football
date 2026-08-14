@@ -96,19 +96,13 @@ interface PlayerIntent {
 5. moveToward(player, player.intent.target, config, speedFactorFor(intent.type))
 ```
 
-## オフサイド対策との接続（`WaitOnside`/`RunBehind`）
+## オフサイド対策との接続（`WaitOnside`/`RunBehind`） — 撤去済み（2026-08-14）
 
-現行の `scoreReceivingSpot` ＋ `selectReceivingDistance` を置き換えるのではなく、上位に状態を1枚被せる。
+当初はここに `WaitOnside`（ラインの手前で待つ）/`RunBehind`（裏へ抜ける）という2状態を追加する設計を書いていたが、N-3として実装したところ致命的な崩壊が確認され、ユーザー指摘（「相手守備ラインへの張り付き判定はいらないのでは」）を受けて撤去した。設計・実装とも削除済み。経緯は以下に残す。
 
-- `WaitOnside` の target = 受け手ロジックに「オフサイドライン超過をほぼゼロ許容」の制約を強めた地点（`offsideOvershootWeight` を一時的に強く効かせた版）。
-- `RunBehind` の target = 逆に `forwardWeight` を強め、ライン超過ペナルティを緩めた地点（現行ロジックに近い）。
-- 遷移条件（`WaitOnside → RunBehind`）は「ボール保持者が前を向いている」「自分がオンサイド」「マーク圧力が低い」の複合条件として `canRunBehind(player, state, config)` に切り出す。
+**当初の設計**: `WaitOnside` の target をオフサイドライン超過ペナルティを強めた地点、`RunBehind` の target をライン超過ペナルティを緩めた地点とし、対象選手は `offsideLineY` との y座標差が閾値未満かどうかで動的に絞り込む（`isLastManBack` と対称的な方針、1人に限定しない）、という形で実装した。
 
-### 対象選手の絞り込み
-
-役割（FW/MF/DF）ではなく実位置で動的に判定する（`isLastManBack` と対称的な方針）。`offsideLineY(side, oppTeam, ball.pos, config)` との y座標差が閾値（新設: `config.ai.offside.frontLineProximityMeters` 想定）未満の選手を `WaitOnside`/`RunBehind` の候補対象とする。`isLastManBack` のように「1人だけに絞る」形は取らない——少人数サッカー（3対3）では前線に複数人が同時に並ぶ局面が普通にあり、1人限定にすると裏抜けの連携（同時に2人がオフサイドラインを意識する場面）を表現できなくなるため。閾値外の選手は従来通り `Support`/`BackSupport`/`LateralSupport` のみが候補。
-
-既存の `offside.avoidanceEnabled`/`enforcementEnabled` とは独立した新フラグ（例: `offside.stateBasedWaitEnabled`）で切り替え可能にし、balance-checkで単独評価できるようにする。
+**撤去理由**: この設計の根本的な欠陥は、目標地点を `offsideLineY`（＝「相手最終ラインかボールか、より進んでいる方」）に直接連動させたことにある。このゲームはGKが不在で守備側3人がボール際に深く集まる場面が頻発するため、その瞬間だけ「最終ライン」自体が自陣ゴール付近まで下がる。`WaitOnside`/`RunBehind` はこのラインに素朴に追従するため、前線選手がラインと一緒に自陣深くまで下がりきってしまい、攻撃が組み立てられず平均得点0.00（全試合0-0）まで崩壊した。`avoidanceEnabled` で過去に確認されていた崩壊（既存の `Support` 計算がオフサイドライン超過を過度に避けようとして前進が止まる問題）と同系統の症状であり、「守備側の実位置に直結する値を、攻撃側の目標地点計算にそのまま使うと壊れやすい」という教訓が2回目の実例として得られた。再挑戦するなら、既存の `Support` 計算にある `forwardReachFraction`/`receivingDistance`（＝ボールからの相対距離・ゴールまでの残り距離を基準にし、守備側の実位置には直接連動しない）と同じ発想で目標地点を作り直す必要がある。
 
 ## パラメータ接続（新規パラメータは増やさない方針）
 

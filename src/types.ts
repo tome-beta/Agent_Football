@@ -27,8 +27,6 @@ export type PlayerIntentType =
   | "Support"
   | "BackSupport"
   | "LateralSupport"
-  | "WaitOnside"
-  | "RunBehind"
   | "Press"
   | "Cover"
   | "ChaseLooseBall";
@@ -395,22 +393,6 @@ export interface GameConfig {
        * さらなる改善（自然なオフサイド率20%未満が目安）が前提のため、一旦 false のまま。
        */
       enforcementEnabled: boolean;
-      /**
-       * マイルストーンN-3: `WaitOnside`/`RunBehind` intent（オフサイドライン付近で
-       * 「待つ」と「抜ける」を明示的に分ける状態遷移）を有効にするか。avoidanceEnabled/
-       * enforcementEnabled とは独立に切り替えられ、単独でbalance-check評価できるようにする
-       * （設計: specification/features_intent_state_machine.md）。
-       */
-      stateBasedWaitEnabled: boolean;
-      /**
-       * `WaitOnside`/`RunBehind` intentの対象とする選手を、オフサイドラインとの
-       * y座標差[m]がこの値未満かどうかで動的に絞り込む（役割固定ではなく実位置判定。
-       * `isLastManBack` と対称的な方針）。1人に限定しない — 3対3では前線に複数人が
-       * 同時に並ぶ局面が普通にあるため。
-       */
-      frontLineProximityMeters: number;
-      /** `WaitOnside` 中、オフサイドラインからどれだけ手前（自ゴール側）で待機するか [m]。 */
-      waitOnsideMarginMeters: number;
       /** 同一ラインとみなす許容誤差 [m]。 */
       lineToleranceMeters: number;
       /**
@@ -470,14 +452,6 @@ export interface GameConfig {
       supportMinDurationTurns: number;
       /** Support/BackSupport/LateralSupport 意図を、これを超えたターン数経過で強制的に再判断する。 */
       supportMaxDurationTurns: number;
-      /** WaitOnside 意図を維持する最低ターン数（マイルストーンN-3。canRunBehind判定のチラつき防止）。 */
-      waitOnsideMinDurationTurns: number;
-      /** WaitOnside 意図を、これを超えたターン数経過で強制的に再判断する。 */
-      waitOnsideMaxDurationTurns: number;
-      /** RunBehind 意図を維持する最低ターン数（短めに設定し、抜けた後は素早く次の判断に戻す）。 */
-      runBehindMinDurationTurns: number;
-      /** RunBehind 意図を、これを超えたターン数経過で強制的に再判断する。 */
-      runBehindMaxDurationTurns: number;
       /** Cover 意図（守備の基本ポジショニング）を維持する最低ターン数（マイルストーンN-4）。 */
       coverMinDurationTurns: number;
       /** Cover 意図を、これを超えたターン数経過で強制的に再判断する。 */
