@@ -106,7 +106,15 @@ function applyAimError(dir: Vec2, accuracy: number, state: GameState, config: Ga
   return { x: dir.x * cos - dir.y * sin, y: dir.x * sin + dir.y * cos };
 }
 
-/** target に向かって player.vel を設定する（十分近ければ停止）。speedFactor で速度を係数倍する。 */
+/**
+ * target に向かって player.vel を設定する（十分近ければ停止）。speedFactor で速度を係数倍する。
+ *
+ * 目標との距離が「1ターンで進む距離」より短い場合は、その距離分だけしか進まない速度に
+ * 減速する（`dist / dt` を速度の上限にする）。この減速がないと、目標がわずかに動く
+ * だけの状況（例: 味方保持中のボール追従）で毎ターン目標を通り越しては逆方向へ全速力で
+ * 戻る、という振動（震え）が起きていた（ユーザー指摘、2026-08-14）。遠方では
+ * `dist / dt` が実効速度を上回るため、Math.min により従来通り全速力での接近を維持する。
+ */
 function moveToward(player: Player, target: Vec2, config: GameConfig, speedFactor = 1): void {
   const toTarget = sub(target, player.pos);
   const dist = length(toTarget);
@@ -114,7 +122,9 @@ function moveToward(player: Player, target: Vec2, config: GameConfig, speedFacto
     player.vel = { x: 0, y: 0 };
     return;
   }
-  player.vel = scale(normalize(toTarget), effectiveSpeed(player, config) * speedFactor);
+  const maxSpeed = effectiveSpeed(player, config) * speedFactor;
+  const arrivalSpeed = dist / config.physics.dt;
+  player.vel = scale(normalize(toTarget), Math.min(maxSpeed, arrivalSpeed));
 }
 
 /**
@@ -391,6 +401,32 @@ function nearestPosTo(point: Vec2, candidates: Player[]): Vec2 | undefined {
 }
 
 /**
+ * base 地点付近の敵マーカーから離す方向へ、markerAvoidStepDistance を上限に連続的に
+ * ずらす。以前は2つの不連続を抱えていた（ユーザー指摘、2026-08-14）:
+ *   1. 「markerRange未満なら固定でmarkerAvoidStepDistanceずらす／以上なら
+ *      ずらさない」という二値判定 → 選手が目標へ近づいて敵との距離がmarkerRangeを
+ *      またぐたびにopenSpotがステップ状に3mジャンプするbang-bang型の振動
+ *   2. 「最も近い敵1人」だけを基準に方向を決めていた → ほぼ同距離の敵が2人いると
+ *      どちらが最寄りかがわずかな位置変化で入れ替わり、回避方向が丸ごと反転する
+ * 1.はしきい値付近で連続的に0へ収束させ、2.はapplyTeammateRepulsionと同じく
+ * 範囲内の全員の寄与を合算する（単一の最寄り点を選ばない）ことで解消する。
+ */
+function applyMarkerAvoidance(base: Vec2, oppTeam: Team, config: GameConfig): Vec2 {
+  const p = config.ai.positioning;
+  const markerRange = config.ai.passDistance * p.markerAvoidRangeFactor;
+  let result = base;
+  for (const opp of oppTeam.players) {
+    const d = distance(base, opp.pos);
+    if (d >= markerRange) continue;
+    const away = sub(base, opp.pos);
+    if (length(away) <= 1e-6) continue;
+    const strength = (1 - d / markerRange) * p.markerAvoidStepDistance;
+    result = add(result, scale(normalize(away), strength));
+  }
+  return result;
+}
+
+/**
  * 敵ボール保持者を複数人で詰め寄るとき、全員が同じ方向（自ゴール寄り）から一直線に
  * 近づいてしまうと「囲む」形にならず団子状に重なるだけになる。ここでは pressDistance
  * 以内にいる味方（自分を含む）を id 順に並べて円周上のスロットに割り当て、各人が
@@ -453,15 +489,7 @@ function computeBackSupportTarget(
   const backDistance = config.ai.passDistance * p.backSupportDistanceFactor;
   const base = length(towardOwnGoalDir) < 1e-6 ? home : add(ballPos, scale(towardOwnGoalDir, backDistance));
 
-  const markerRange = config.ai.passDistance * p.markerAvoidRangeFactor;
-  const marker = nearestPosTo(base, oppTeam.players);
-  let openSpot = base;
-  if (marker !== undefined && distance(base, marker) < markerRange) {
-    const awayFromMarker = sub(base, marker);
-    if (length(awayFromMarker) > 1e-6) {
-      openSpot = add(base, scale(normalize(awayFromMarker), p.markerAvoidStepDistance));
-    }
-  }
+  const openSpot = applyMarkerAvoidance(base, oppTeam, config);
   return {
     x: (openSpot.x + home.x) / 2,
     y: openSpot.y * (1 - p.receivingHomeBlendY) + home.y * p.receivingHomeBlendY,
@@ -480,15 +508,7 @@ function computeLateralSupportTarget(player: Player, home: Vec2, ballPos: Vec2, 
   const awaySign = Math.abs(home.x) > 1e-6 ? -Math.sign(home.x) : Math.sign(ballPos.x) > 0 ? -1 : 1;
   const base = { x: ballPos.x + awaySign * lateralDistance, y: ballPos.y };
 
-  const markerRange = config.ai.passDistance * p.markerAvoidRangeFactor;
-  const marker = nearestPosTo(base, oppTeam.players);
-  let openSpot = base;
-  if (marker !== undefined && distance(base, marker) < markerRange) {
-    const awayFromMarker = sub(base, marker);
-    if (length(awayFromMarker) > 1e-6) {
-      openSpot = add(base, scale(normalize(awayFromMarker), p.markerAvoidStepDistance));
-    }
-  }
+  const openSpot = applyMarkerAvoidance(base, oppTeam, config);
   return {
     x: openSpot.x,
     y: openSpot.y * (1 - p.receivingHomeBlendY) + home.y * p.receivingHomeBlendY,
@@ -767,16 +787,7 @@ function computeSupportIntentTarget(
   }
   const base = length(towardGoalDir) < 1e-6 ? home : add(ball.pos, scale(towardGoalDir, receivingDistance));
 
-  // 近くに敵がいるときだけ回避する（遠い敵に対してまで毎回markerAvoidStepDistanceずらすと無意味に揺れる）。
-  const markerRange = config.ai.passDistance * p.markerAvoidRangeFactor;
-  const marker = nearestPosTo(base, oppTeam.players);
-  let openSpot = base;
-  if (marker !== undefined && distance(base, marker) < markerRange) {
-    const awayFromMarker = sub(base, marker);
-    if (length(awayFromMarker) > 1e-6) {
-      openSpot = add(base, scale(normalize(awayFromMarker), p.markerAvoidStepDistance));
-    }
-  }
+  const openSpot = applyMarkerAvoidance(base, oppTeam, config);
   // x同様にyもhomeと少しブレンドする。以前はyをopenSpotのまま採用していたため、ボール保持中の
   // 非保持選手が全員「ボールから同じ前進距離だけ進んだ同じ高さ」に並び、役割に関わらず
   // 常に同じ横一列の陣形に見えてしまっていた（ユーザー指摘、2026-08-08）。receivingHomeBlendY
