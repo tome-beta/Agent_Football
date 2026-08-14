@@ -166,6 +166,10 @@ export const defaultConfig: GameConfig = {
       waitOnsideMaxDurationTurns: 10, // 10ターン=1.0秒
       runBehindMinDurationTurns: 2, // 2ターン=0.2秒
       runBehindMaxDurationTurns: 6, // 6ターン=0.6秒
+      coverMinDurationTurns: 4, // 4ターン=0.4秒（Support系と同じ水準）
+      coverMaxDurationTurns: 12, // 12ターン=1.2秒
+      pressMinDurationTurns: 1, // 1ターン=0.1秒
+      pressMaxDurationTurns: 3, // 3ターン=0.3秒
     },
   },
   team: {

@@ -612,6 +612,40 @@ describe("decideAction: non-possessor", () => {
 
     expect(["Support", "BackSupport", "LateralSupport"]).toContain(supporter.intent.type);
   });
+
+  it("keeps a chosen Press intent until pressMaxDurationTurns even if the choice would change", () => {
+    // マイルストーンN-4の回帰テスト: 以前はpressChanceを毎ターン独立に振り直していたため、
+    // 詰め寄るかどうかがターンごとに反転しうった。intent化により、一度Pressを選んだら
+    // pressMaxDurationTurns経過まで同じ意図を保持するはず。
+    const config = loadConfig({ random: { seed: 1 } });
+    const state = createInitialState(config);
+    const defender = state.teams.A.players.find((p) => p.role === "DF")!;
+    const carrier = state.teams.B.players.find((p) => p.role === "FW")!;
+
+    state.ball.pos = { ...carrier.pos };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = carrier.id;
+    defender.pos = { x: carrier.pos.x + 2, y: carrier.pos.y };
+
+    // 最初の選択でPressを確実に選ばせる。
+    config.ai.positioning.pressChanceBase = 1;
+    config.ai.positioning.lastManPressSuppression = 1;
+    decideAction(defender, state, config);
+    expect(defender.intent.type).toBe("Press");
+
+    // 以後は確率を0に変えても、pressMaxDurationTurns経過前は同じ意図を保持するはず。
+    config.ai.positioning.pressChanceBase = 0;
+    for (let i = 0; i < config.ai.intent.pressMaxDurationTurns - 1; i++) {
+      state.turn += 1;
+      decideAction(defender, state, config);
+      expect(defender.intent.type).toBe("Press");
+    }
+
+    // pressMaxDurationTurns経過後は再判断され、確率0のPressはもう選ばれない。
+    state.turn += 1;
+    decideAction(defender, state, config);
+    expect(defender.intent.type).not.toBe("Press");
+  });
 });
 
 describe("decideAction: positioning force composition (milestone H)", () => {

@@ -501,79 +501,147 @@ function computeLateralSupportTarget(player: Player, home: Vec2, ballPos: Vec2, 
  * 最後に、味方が minSpacing 未満に近づいていれば離れる方向へ補正する（teammateRepulsion）。
  */
 function computeTargetPosition(player: Player, state: GameState, config: GameConfig): Vec2 {
-  const home = formationPos(player.team, player.role, config);
-  const own = ownGoal(player.team, config);
   const { ball } = state;
-  const p = config.ai.positioning;
-  const myTeam = state.teams[player.team];
   const oppTeam = state.teams[opposite(player.team)];
   const carrier = ball.possessorId !== null ? oppTeam.players.find((o) => o.id === ball.possessorId) : undefined;
 
-  let target: Vec2;
-  if (carrier !== undefined) {
-    const idealFollowDist = distance(home, own) * p.ballPullWeight;
-    target = add(home, clampMagnitude(sub(ball.pos, home), idealFollowDist));
+  // Cover/Press（敵保持中）・Support系（味方保持中/フリーボール）はいずれも
+  // マイルストーンN-4/N-2でintent機構に移した。repulsion適用まで各resolve関数の
+  // 中で完結させるため、ここでは早期returnするだけにする。
+  return carrier !== undefined
+    ? resolveDefensiveIntentTarget(player, state, config, carrier)
+    : resolveSupportIntentTarget(player, state, config);
+}
 
-    const lineVec = sub(ball.pos, own);
-    const lineLenSq = lineVec.x * lineVec.x + lineVec.y * lineVec.y;
-    if (lineLenSq > 1e-6) {
-      const t = Math.max(0, Math.min(1, ((target.x - own.x) * lineVec.x + (target.y - own.y) * lineVec.y) / lineLenSq));
-      const projected = add(own, scale(lineVec, t));
-      target = add(target, scale(sub(projected, target), p.coverWeight));
+type DefensiveFamilyIntentType = "Cover" | "Press";
+
+const DEFENSIVE_INTENT_TYPES: readonly PlayerIntentType[] = ["Cover", "Press"];
+
+/**
+ * 敵ボール保持中の「基本カバーポジション」を計算する（Press判定より前段の共通処理）。
+ * ボール追従・ボール-自ゴール線への射影・ゴール前危険度に応じた戻りとゴール幅カバーを
+ * 合成する。Press intentのときもこの基準位置に詰め寄りブレンドを上乗せするだけなので、
+ * どちらの intent でも必ずこの計算を通る。
+ */
+function computeCoverBaselineTarget(player: Player, ballPos: Vec2, config: GameConfig): Vec2 {
+  const home = formationPos(player.team, player.role, config);
+  const own = ownGoal(player.team, config);
+  const p = config.ai.positioning;
+
+  const idealFollowDist = distance(home, own) * p.ballPullWeight;
+  let target = add(home, clampMagnitude(sub(ballPos, home), idealFollowDist));
+
+  const lineVec = sub(ballPos, own);
+  const lineLenSq = lineVec.x * lineVec.x + lineVec.y * lineVec.y;
+  if (lineLenSq > 1e-6) {
+    const t = Math.max(0, Math.min(1, ((target.x - own.x) * lineVec.x + (target.y - own.y) * lineVec.y) / lineLenSq));
+    const projected = add(own, scale(lineVec, t));
+    target = add(target, scale(sub(projected, target), p.coverWeight));
+  }
+
+  // ゴール前カバーは coverWeight により全員が「ボール-自ゴール中心」の同一線上に
+  // 収束するため、ボールが自陣深くまで来ても中央1点に団子化してポストが空きがちだった
+  // （ユーザー指摘、2026-08-08）。ボールが goalCoverDangerDistance 圏内に入ったら、
+  // home.x の符号・大きさ（DF=中央/MF=左寄り/FW=右寄り、features_1のフォーメーション比率）
+  // に応じてゴール幅方向へ広がるよう横方向にオフセットし、簡易的な「壁」を作る。
+  // 役割で分岐せず home.x という連続値だけを使うため、フォーメーションを変えれば
+  // 広がり方も自然に追従する。
+  const distToOwnGoal = distance(ballPos, own);
+  const danger = Math.max(0, Math.min(1, 1 - distToOwnGoal / p.goalCoverDangerDistance));
+  if (danger > 0) {
+    // 上のcoverWeight射影は「ホームからidealFollowDist以内でボールへ寄った点」を線に
+    // 投影するだけなので、ホームが浅い選手（MF/FW）は危険度が上がっても射影先(t)が
+    // ゴール寄りに寄り切らず、自ゴールへの戻りが途中で頭打ちになっていた
+    // （ユーザー指摘、2026-08-08。攻め上がった選手のリカバリーを再現するテストで確認）。
+    // 危険度に比例して target.y を own.y へ直接引き寄せることで、コース射影の限界に
+    // 関係なく確実にゴール方向へ戻る力を保証する。
+    target.y += (own.y - target.y) * danger * p.goalRecallWeight;
+    if (Math.abs(home.x) > 1e-6) {
+      target.x += Math.sign(home.x) * p.goalMouthSpreadDistance * danger;
     }
+  }
 
-    // ゴール前カバーは coverWeight により全員が「ボール-自ゴール中心」の同一線上に
-    // 収束するため、ボールが自陣深くまで来ても中央1点に団子化してポストが空きがちだった
-    // （ユーザー指摘、2026-08-08）。ボールが goalCoverDangerDistance 圏内に入ったら、
-    // home.x の符号・大きさ（DF=中央/MF=左寄り/FW=右寄り、features_1のフォーメーション比率）
-    // に応じてゴール幅方向へ広がるよう横方向にオフセットし、簡易的な「壁」を作る。
-    // 役割で分岐せず home.x という連続値だけを使うため、フォーメーションを変えれば
-    // 広がり方も自然に追従する。
-    const distToOwnGoal = distance(ball.pos, own);
-    const danger = Math.max(0, Math.min(1, 1 - distToOwnGoal / p.goalCoverDangerDistance));
-    if (danger > 0) {
-      // 上のcoverWeight射影は「ホームからidealFollowDist以内でボールへ寄った点」を線に
-      // 投影するだけなので、ホームが浅い選手（MF/FW）は危険度が上がっても射影先(t)が
-      // ゴール寄りに寄り切らず、自ゴールへの戻りが途中で頭打ちになっていた
-      // （ユーザー指摘、2026-08-08。攻め上がった選手のリカバリーを再現するテストで確認）。
-      // 危険度に比例して target.y を own.y へ直接引き寄せることで、コース射影の限界に
-      // 関係なく確実にゴール方向へ戻る力を保証する。
-      target.y += (own.y - target.y) * danger * p.goalRecallWeight;
-      if (Math.abs(home.x) > 1e-6) {
-        target.x += Math.sign(home.x) * p.goalMouthSpreadDistance * danger;
-      }
-    }
+  return target;
+}
 
+/**
+ * Cover/Press のどちらを選ぶか（マイルストーンN-4）。RNG消費順序は旧
+ * `computeTargetPosition` のcarrier分岐と完全に同じ順序を保つ（pressDistance圏外なら
+ * chance()を消費せず即Cover）。
+ */
+function chooseDefensiveIntentType(
+  player: Player,
+  state: GameState,
+  config: GameConfig,
+  carrier: Player
+): DefensiveFamilyIntentType {
+  const p = config.ai.positioning;
+  const myTeam = state.teams[player.team];
+  const own = ownGoal(player.team, config);
+
+  const dCarrier = distance(player.pos, carrier.pos);
+  if (dCarrier > p.pressDistance) return "Cover";
+
+  // 詰め寄るかどうかは役割ではなく mental に応じた確率で決める。mental が高い選手ほど
+  // 積極的に前へ出る傾向がにじみ出る（features_1/開発メモの「役割分岐にしない」方針に沿う）。
+  let pressChance = Math.max(0, Math.min(1, p.pressChanceBase + (player.params.mental - 0.5) * p.pressChanceSpread));
+  // pressDistance がピッチ規模に対して広いため、3人全員が同時に詰め寄り候補になり
+  // ゴール前のカバーが誰もいなくなる場面が頻発していた（ユーザー指摘、2026-08-08）。
+  // 最も自ゴールに近い選手（＝その瞬間の最終ライン）だけはプレスを抑制し、カバー
+  // リング位置に留まりやすくする。役割固定ではなく毎ターンの実位置で判定するため、
+  // 誰が最終ラインを担うかは局面に応じて入れ替わる。
+  if (isLastManBack(player, myTeam, own)) {
+    pressChance *= p.lastManPressSuppression;
+  }
+  return chance(state, pressChance) ? "Press" : "Cover";
+}
+
+/**
+ * 選択済みの意図種別に対する目標地点を、毎ターン再計算する（`target` は intent に
+ * 持たせず、type だけを固定する設計。`specification/features_intent_state_machine.md`）。
+ * Press でも常にcoverベース位置を土台にする — dCarrierがpressDistanceを超えていれば
+ * 詰め寄りブレンドは自動的にスキップされ、Coverと同じ目標地点になる（intentの種別は
+ * Pressのまま維持しつつ、実際の追従は現在の距離に応じて毎ターン調整される）。
+ */
+function computeDefensiveIntentTarget(
+  type: DefensiveFamilyIntentType,
+  player: Player,
+  state: GameState,
+  config: GameConfig,
+  carrier: Player
+): Vec2 {
+  const { ball } = state;
+  const p = config.ai.positioning;
+  const myTeam = state.teams[player.team];
+  const own = ownGoal(player.team, config);
+
+  let target = computeCoverBaselineTarget(player, ball.pos, config);
+
+  if (type === "Press") {
     const dCarrier = distance(player.pos, carrier.pos);
     if (dCarrier <= p.pressDistance) {
-      // 詰め寄るかどうかは役割ではなく mental に応じた確率で毎ターン決める。
-      // これにより同じ場面でも選手の反応が毎回変わり、かつ mental が高い選手ほど
-      // 積極的に前へ出る傾向がにじみ出る（features_1/開発メモの「役割分岐にしない」方針に沿う）。
-      let pressChance = Math.max(
-        0,
-        Math.min(1, p.pressChanceBase + (player.params.mental - 0.5) * p.pressChanceSpread)
-      );
-      // pressDistance がピッチ規模に対して広いため、3人全員が同時に詰め寄り候補になり
-      // ゴール前のカバーが誰もいなくなる場面が頻発していた（ユーザー指摘、2026-08-08）。
-      // 最も自ゴールに近い選手（＝その瞬間の最終ライン）だけはプレスを抑制し、カバー
-      // リング位置に留まりやすくする。役割固定ではなく毎ターンの実位置で判定するため、
-      // 誰が最終ラインを担うかは局面に応じて入れ替わる。
-      if (isLastManBack(player, myTeam, own)) {
-        pressChance *= p.lastManPressSuppression;
-      }
-      if (chance(state, pressChance)) {
-        const strength = p.pressWeight * player.params.mental;
-        target = add(target, scale(sub(computeApproachPoint(player, carrier, myTeam, own, p), target), strength));
-      }
+      const strength = p.pressWeight * player.params.mental;
+      target = add(target, scale(sub(computeApproachPoint(player, carrier, myTeam, own, p), target), strength));
     }
-  } else {
-    // Support/BackSupport/LateralSupport の選択と目標地点計算はマイルストーンN-2で
-    // intent 機構（resolveSupportIntentTarget）に移した。ここでの repulsion 適用は
-    // resolveSupportIntentTarget 内で完結するため、carrier 分岐と違い早期returnする。
-    return resolveSupportIntentTarget(player, state, config);
   }
 
   return applyTeammateRepulsion(player, target, myTeam, p);
+}
+
+function resolveDefensiveIntentTarget(player: Player, state: GameState, config: GameConfig, carrier: Player): Vec2 {
+  const isDefensiveFamily = DEFENSIVE_INTENT_TYPES.includes(player.intent.type);
+  const expired = isDefensiveFamily && state.turn - player.intent.startedAtTurn >= player.intent.maxDurationTurns;
+
+  if (!isDefensiveFamily || expired) {
+    const type = chooseDefensiveIntentType(player, state, config, carrier);
+    const { min, max } =
+      type === "Press"
+        ? { min: config.ai.intent.pressMinDurationTurns, max: config.ai.intent.pressMaxDurationTurns }
+        : { min: config.ai.intent.coverMinDurationTurns, max: config.ai.intent.coverMaxDurationTurns };
+    player.intent = { type, startedAtTurn: state.turn, minDurationTurns: min, maxDurationTurns: max };
+  }
+
+  return computeDefensiveIntentTarget(player.intent.type as DefensiveFamilyIntentType, player, state, config, carrier);
 }
 
 type SupportFamilyIntentType = "Support" | "BackSupport" | "LateralSupport" | "WaitOnside" | "RunBehind";

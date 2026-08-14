@@ -470,6 +470,19 @@ export interface GameConfig {
       runBehindMinDurationTurns: number;
       /** RunBehind 意図を、これを超えたターン数経過で強制的に再判断する。 */
       runBehindMaxDurationTurns: number;
+      /** Cover 意図（守備の基本ポジショニング）を維持する最低ターン数（マイルストーンN-4）。 */
+      coverMinDurationTurns: number;
+      /** Cover 意図を、これを超えたターン数経過で強制的に再判断する。 */
+      coverMaxDurationTurns: number;
+      /**
+       * Press 意図を維持する最低ターン数。以前は毎ターン独立に `pressChance` を振り直して
+       * いたため、詰め寄るかどうかがターンごとに反転しうった。intent化により、一度
+       * 詰め寄ると決めたら短時間コミットする（ただしdCarrierがpressDistanceを超えたら
+       * 毎ターンのブレンド自体は自動的に効かなくなる）。
+       */
+      pressMinDurationTurns: number;
+      /** Press 意図を、これを超えたターン数経過で強制的に再判断する。 */
+      pressMaxDurationTurns: number;
     };
   };
   team: {
