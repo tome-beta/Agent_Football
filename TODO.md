@@ -35,6 +35,15 @@
 
 ## 未完了タスク
 
+### マイルストーンN: 選手AI 意図（Intent）ベース状態遷移の導入
+
+現行の `decideAction`/`computeTargetPosition` は非保持時の移動先を毎ターンゼロから計算し直しており、境界値付近で選手の行き先がターンごとに反転する「フラフラ」の原因になっている。設計は [`specification/features_intent_state_machine.md`](specification/features_intent_state_machine.md) を参照（設計のみ・未着手）。ブランチ: `feature/player-intent-state-machine`。
+
+- [ ] N-1: `Player.intent` フィールド追加。`ChaseLooseBall`/`Cover`/`Press` をほぼ現状ロジックのまま intent 化する（挙動を変えない検証ステップ）
+- [ ] N-2: `decideSupportAction` 内の `Support`/`BackSupport`/`LateralSupport` を intent 化し `minDurationTurns` を導入。balance-check で受け手のジグザグ・平均得点を導入前後で比較
+- [ ] N-3: `WaitOnside`/`RunBehind` を新設し、既存オフサイドフラグ（`avoidanceEnabled`/`enforcementEnabled`）とは別フラグで単独評価できるようにする
+- [ ] N-4: 守備側（`decideDefensiveAction`）を intent 化
+
 ### オフサイド ステップ2 再挑戦（保留中）
 
 - [ ] 受け手ポジショニング側の改善はマイルストーンKで打ち切り。再挑戦するなら以下のいずれかが必要:
