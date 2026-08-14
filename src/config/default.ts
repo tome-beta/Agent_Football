@@ -143,6 +143,10 @@ export const defaultConfig: GameConfig = {
       // ChaseLooseBall のままになり得る。visionDistance圏内からの追跡なので、
       // 通常はこれより先にボールへ追いつくか、他選手が拾って"Free"でなくなる想定。
       chaseLooseBallMaxDurationTurns: 5, // 5ターン=0.5秒
+      // 検討メモ（specification/選手思考の状態遷移を検討.md）の目安 0.4〜1.2秒 を
+      // dt=0.1秒換算した値。balance-checkで統計的同等性を確認済み（マイルストーンN-2）。
+      supportMinDurationTurns: 4, // 4ターン=0.4秒
+      supportMaxDurationTurns: 12, // 12ターン=1.2秒
     },
   },
   team: {

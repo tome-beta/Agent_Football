@@ -385,6 +385,13 @@ describe("decideAction: non-possessor", () => {
   it("caps the receiving-position forward reach by remaining distance to goal (positioning redesign method A)", () => {
     const config = loadConfig({ random: { seed: 1 } });
     config.ai.offside.avoidanceEnabled = true; // デフォルトは無効化しているため個別テストで有効化する
+    // マイルストーンN-2: Support/BackSupport/LateralSupportの選択はintentとして
+    // 複数ターン固定される。ここではSupport（forwardReachFractionが効く経路）だけを
+    // 検証したいので、他2種別が選ばれないよう確率を0にする。
+    config.ai.positioning.backSupportChanceBase = 0;
+    config.ai.positioning.backSupportMentalSpread = 0;
+    config.ai.positioning.lateralSupportChanceBase = 0;
+    config.ai.positioning.lateralSupportVisionSpread = 0;
 
     function settledSupporterY(forwardReachFraction: number): number {
       config.ai.offside.forwardReachFraction = forwardReachFraction;
@@ -420,6 +427,13 @@ describe("decideAction: non-possessor", () => {
     config.ai.offside.avoidanceEnabled = true; // デフォルトは無効化しているため個別テストで有効化する
     config.ai.positioning.markerAvoidRangeFactor = 0; // マーカー回避を無効化し、方式Cの効果だけを見る
     config.ai.offside.forwardReachFraction = 1; // 方式Aの上限が効かないようにする
+    // マイルストーンN-2: Support/BackSupport/LateralSupportの選択はintentとして
+    // 複数ターン固定される。ここではSupport（方式Cの到達時間比較が効く経路）だけを
+    // 検証したいので、他2種別が選ばれないよう確率を0にする。
+    config.ai.positioning.backSupportChanceBase = 0;
+    config.ai.positioning.backSupportMentalSpread = 0;
+    config.ai.positioning.lateralSupportChanceBase = 0;
+    config.ai.positioning.lateralSupportVisionSpread = 0;
 
     function settledSupporterY(defenderPos: { x: number; y: number }): number {
       const state = createInitialState(config);
@@ -494,6 +508,39 @@ describe("decideAction: non-possessor", () => {
     decideAction(chaser, state, config);
     expect(chaser.intent.type).toBe("ChaseLooseBall");
     expect(chaser.state).toBe("BallTracking");
+  });
+
+  it("keeps a chosen Support/BackSupport/LateralSupport intent until supportMaxDurationTurns even if the choice would change", () => {
+    // マイルストーンN-2の回帰テスト: 意図の「種別」だけを固定し、目標地点は毎ターン
+    // 再計算する設計（specification/features_intent_state_machine.md）。ここでは種別が
+    // supportMaxDurationTurns経過まで保持されることを確認する。
+    const config = loadConfig({ random: { seed: 1 } });
+    const state = createInitialState(config);
+    const supporter = state.teams.A.players.find((p) => p.role === "MF")!;
+    const carrier = state.teams.A.players.find((p) => p.role === "FW")!;
+
+    state.ball.pos = { x: 0, y: 0 };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = carrier.id;
+    supporter.pos = { x: 5, y: -5 };
+
+    // 最初の選択でBackSupportを確実に選ばせる。
+    config.ai.positioning.backSupportChanceBase = 1;
+    decideAction(supporter, state, config);
+    expect(supporter.intent.type).toBe("BackSupport");
+
+    // 以後は確率を0に変えても、supportMaxDurationTurns経過前は同じ意図を保持するはず。
+    config.ai.positioning.backSupportChanceBase = 0;
+    for (let i = 0; i < config.ai.intent.supportMaxDurationTurns - 1; i++) {
+      state.turn += 1;
+      decideAction(supporter, state, config);
+      expect(supporter.intent.type).toBe("BackSupport");
+    }
+
+    // supportMaxDurationTurns経過後は再判断され、確率0のBackSupportはもう選ばれない。
+    state.turn += 1;
+    decideAction(supporter, state, config);
+    expect(supporter.intent.type).not.toBe("BackSupport");
   });
 });
 

@@ -438,6 +438,14 @@ export interface GameConfig {
        * 追い続けて他の判断（受け手ポジションへ戻る等）に切り替われなくなるのを防ぐ。
        */
       chaseLooseBallMaxDurationTurns: number;
+      /**
+       * Support/BackSupport/LateralSupport 意図を維持する最低ターン数（マイルストーンN-2）。
+       * 現状はこの3種別間の切り替えを抑制する割り込み条件がまだ無いため実質未使用だが、
+       * 将来の割り込み（例: PassLaneClosed）追加時にそのまま効くよう型としては持たせておく。
+       */
+      supportMinDurationTurns: number;
+      /** Support/BackSupport/LateralSupport 意図を、これを超えたターン数経過で強制的に再判断する。 */
+      supportMaxDurationTurns: number;
     };
   };
   team: {

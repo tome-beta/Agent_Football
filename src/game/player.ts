@@ -1,4 +1,4 @@
-import type { Player, PlayerParams, Role, Team, TeamSide, Vec2, GameState, GameConfig } from "../types";
+import type { Player, PlayerIntentType, PlayerParams, Role, Team, TeamSide, Vec2, GameState, GameConfig } from "../types";
 import { add, sub, scale, length, normalize, distance, clampMagnitude } from "./utils";
 import { kickBall } from "./ball";
 import { nextRandomRange, chance } from "./random";
@@ -567,81 +567,159 @@ function computeTargetPosition(player: Player, state: GameState, config: GameCon
       }
     }
   } else {
-    const goal = attackGoal(player.team, config);
-
-    // 味方保持中/フリーボール時、受け手ポジションは常にボールより前方にしか生まれない
-    // 構造だと、保持者が孤立していてもバックパスという選択肢自体が存在しなかった
-    // （ユーザー指摘、2026-08-08）。mental が低い選手ほど、前進した受け手位置
-    // ではなくボールより自ゴール側の「バックサポート」位置を目指す確率を毎ターン振り、
-    // 役割分岐ではなくパラメータの違いがそのまま前方/後方志向の差ににじみ出るようにする。
-    const backSupportChance = Math.max(
-      0,
-      Math.min(1, p.backSupportChanceBase - (player.params.mental - 0.5) * p.backSupportMentalSpread)
-    );
-    if (chance(state, backSupportChance)) {
-      target = computeBackSupportTarget(player, home, ball.pos, own, oppTeam, config);
-      target = applyTeammateRepulsion(player, target, myTeam, p);
-      return target;
-    }
-
-    // 前進（縦）とバックサポート（後退）の二択だけだと、前進レーンが塞がれた場面
-    // （オフサイド回避で前進が抑えられているときなど）の代替手段が乏しい。ボールとほぼ
-    // 同じ前進度を保ったまま逆サイドへ開く「横サポート」を第三の選択肢として加える
-    // （`specification/features_offside.md` の反則化崩壊を受けた対策、設計は会話ログ参照）。
-    // vision が広い選手ほど幅を使ったプレーを選びやすい。offsideRiskDribbleBoost と同様、
-    // avoidanceEnabled が無効なときは isOffside 系の評価自体が無意味なので分岐に入らず、
-    // chance() の乱数消費すら行わない（デフォルトのゲームバランス・RNG列に一切影響しない。
-    // balance-checkで確認済み: 乱数だけ消費する形にすると offside 無効時でも勝敗分布が
-    // 変わってしまった）。
-    if (config.ai.offside.avoidanceEnabled) {
-      const lateralSupportChance = Math.max(
-        0,
-        Math.min(1, p.lateralSupportChanceBase + (player.params.vision / 180 - 0.5) * p.lateralSupportVisionSpread)
-      );
-      if (chance(state, lateralSupportChance)) {
-        target = computeLateralSupportTarget(player, home, ball.pos, oppTeam, config);
-        target = applyTeammateRepulsion(player, target, myTeam, p);
-        return target;
-      }
-    }
-
-    const towardGoalDir = normalize(sub(goal, ball.pos));
-    let receivingDistance = config.ai.passDistance * p.receivingDistanceFactor;
-    // 受け手ポジションの前進距離を「ボールからゴールまでの残り距離」の一定割合でも頭打ちにする
-    // （方式A: features_positioning_redesign.md）。相手の実位置を一切参照しないため、相手の
-    // 守備ポジショニングと相互に反応し合うフィードバックループが構造的に発生しない。
-    if (config.ai.offside.avoidanceEnabled) {
-      const remainingToGoal = distance(ball.pos, goal);
-      const maxForward = Math.min(receivingDistance, remainingToGoal * config.ai.offside.forwardReachFraction);
-      // 方式Aの上限内で、前進度・オフサイドライン超過量・相手DFとの到達時間差を
-      // 同時にスコアリングして最良の前進距離を選ぶ（方式D）。
-      receivingDistance = selectReceivingDistance(player, ball.pos, towardGoalDir, maxForward, player.team, oppTeam, config);
-    }
-    const base = length(towardGoalDir) < 1e-6 ? home : add(ball.pos, scale(towardGoalDir, receivingDistance));
-
-    // 近くに敵がいるときだけ回避する（遠い敵に対してまで毎回markerAvoidStepDistanceずらすと無意味に揺れる）。
-    const markerRange = config.ai.passDistance * p.markerAvoidRangeFactor;
-    const marker = nearestPosTo(base, oppTeam.players);
-    let openSpot = base;
-    if (marker !== undefined && distance(base, marker) < markerRange) {
-      const awayFromMarker = sub(base, marker);
-      if (length(awayFromMarker) > 1e-6) {
-        openSpot = add(base, scale(normalize(awayFromMarker), p.markerAvoidStepDistance));
-      }
-    }
-    // x同様にyもhomeと少しブレンドする。以前はyをopenSpotのまま採用していたため、ボール保持中の
-    // 非保持選手が全員「ボールから同じ前進距離だけ進んだ同じ高さ」に並び、役割に関わらず
-    // 常に同じ横一列の陣形に見えてしまっていた（ユーザー指摘、2026-08-08）。receivingHomeBlendY
-    // の比率だけhomeへ寄せることで、DF役割（home が自ゴール寄り）は上がりすぎず、FW役割は
-    // 高い位置を取るという役割ごとの差がにじみ出るようにする（xのような50/50ブレンドだと
-    // 前進が阻害され得点が壊滅する非線形な閾値があったため、小さめの比率に留めている）。
-    target = {
-      x: (openSpot.x + home.x) / 2,
-      y: openSpot.y * (1 - p.receivingHomeBlendY) + home.y * p.receivingHomeBlendY,
-    };
+    // Support/BackSupport/LateralSupport の選択と目標地点計算はマイルストーンN-2で
+    // intent 機構（resolveSupportIntentTarget）に移した。ここでの repulsion 適用は
+    // resolveSupportIntentTarget 内で完結するため、carrier 分岐と違い早期returnする。
+    return resolveSupportIntentTarget(player, state, config);
   }
 
   return applyTeammateRepulsion(player, target, myTeam, p);
+}
+
+const SUPPORT_INTENT_TYPES: readonly PlayerIntentType[] = ["Support", "BackSupport", "LateralSupport"];
+
+/**
+ * 味方保持中/フリーボール時の非保持選手が Support/BackSupport/LateralSupport のどれを
+ * 選ぶか（`chance()` を伴う低頻度の意図選択）。RNG消費順序は旧 `computeTargetPosition`
+ * の else 分岐と完全に同じ順序を保つ（BackSupport判定 → [avoidanceEnabled時のみ]
+ * LateralSupport判定）。
+ */
+function chooseSupportIntentType(
+  player: Player,
+  state: GameState,
+  config: GameConfig
+): "Support" | "BackSupport" | "LateralSupport" {
+  const p = config.ai.positioning;
+
+  // 味方保持中/フリーボール時、受け手ポジションは常にボールより前方にしか生まれない
+  // 構造だと、保持者が孤立していてもバックパスという選択肢自体が存在しなかった
+  // （ユーザー指摘、2026-08-08）。mental が低い選手ほど、前進した受け手位置
+  // ではなくボールより自ゴール側の「バックサポート」位置を目指す確率を毎ターン振り、
+  // 役割分岐ではなくパラメータの違いがそのまま前方/後方志向の差ににじみ出るようにする。
+  const backSupportChance = Math.max(
+    0,
+    Math.min(1, p.backSupportChanceBase - (player.params.mental - 0.5) * p.backSupportMentalSpread)
+  );
+  if (chance(state, backSupportChance)) return "BackSupport";
+
+  // 前進（縦）とバックサポート（後退）の二択だけだと、前進レーンが塞がれた場面
+  // （オフサイド回避で前進が抑えられているときなど）の代替手段が乏しい。ボールとほぼ
+  // 同じ前進度を保ったまま逆サイドへ開く「横サポート」を第三の選択肢として加える
+  // （`specification/features_offside.md` の反則化崩壊を受けた対策、設計は会話ログ参照）。
+  // vision が広い選手ほど幅を使ったプレーを選びやすい。offsideRiskDribbleBoost と同様、
+  // avoidanceEnabled が無効なときは isOffside 系の評価自体が無意味なので分岐に入らず、
+  // chance() の乱数消費すら行わない（デフォルトのゲームバランス・RNG列に一切影響しない。
+  // balance-checkで確認済み: 乱数だけ消費する形にすると offside 無効時でも勝敗分布が
+  // 変わってしまった）。
+  if (config.ai.offside.avoidanceEnabled) {
+    const lateralSupportChance = Math.max(
+      0,
+      Math.min(1, p.lateralSupportChanceBase + (player.params.vision / 180 - 0.5) * p.lateralSupportVisionSpread)
+    );
+    if (chance(state, lateralSupportChance)) return "LateralSupport";
+  }
+
+  return "Support";
+}
+
+/**
+ * 選択済みの意図種別に対する目標地点を、毎ターン再計算する（`target` は intent に
+ * 持たせず、type だけを固定する設計。`specification/features_intent_state_machine.md`）。
+ * repulsion 適用までこの関数の中で完結させる。
+ */
+function computeSupportIntentTarget(
+  type: "Support" | "BackSupport" | "LateralSupport",
+  player: Player,
+  state: GameState,
+  config: GameConfig
+): Vec2 {
+  const home = formationPos(player.team, player.role, config);
+  const own = ownGoal(player.team, config);
+  const { ball } = state;
+  const p = config.ai.positioning;
+  const myTeam = state.teams[player.team];
+  const oppTeam = state.teams[opposite(player.team)];
+
+  if (type === "BackSupport") {
+    return applyTeammateRepulsion(
+      player,
+      computeBackSupportTarget(player, home, ball.pos, own, oppTeam, config),
+      myTeam,
+      p
+    );
+  }
+  if (type === "LateralSupport") {
+    return applyTeammateRepulsion(
+      player,
+      computeLateralSupportTarget(player, home, ball.pos, oppTeam, config),
+      myTeam,
+      p
+    );
+  }
+
+  const goal = attackGoal(player.team, config);
+  const towardGoalDir = normalize(sub(goal, ball.pos));
+  let receivingDistance = config.ai.passDistance * p.receivingDistanceFactor;
+  // 受け手ポジションの前進距離を「ボールからゴールまでの残り距離」の一定割合でも頭打ちにする
+  // （方式A: features_positioning_redesign.md）。相手の実位置を一切参照しないため、相手の
+  // 守備ポジショニングと相互に反応し合うフィードバックループが構造的に発生しない。
+  if (config.ai.offside.avoidanceEnabled) {
+    const remainingToGoal = distance(ball.pos, goal);
+    const maxForward = Math.min(receivingDistance, remainingToGoal * config.ai.offside.forwardReachFraction);
+    // 方式Aの上限内で、前進度・オフサイドライン超過量・相手DFとの到達時間差を
+    // 同時にスコアリングして最良の前進距離を選ぶ（方式D）。
+    receivingDistance = selectReceivingDistance(player, ball.pos, towardGoalDir, maxForward, player.team, oppTeam, config);
+  }
+  const base = length(towardGoalDir) < 1e-6 ? home : add(ball.pos, scale(towardGoalDir, receivingDistance));
+
+  // 近くに敵がいるときだけ回避する（遠い敵に対してまで毎回markerAvoidStepDistanceずらすと無意味に揺れる）。
+  const markerRange = config.ai.passDistance * p.markerAvoidRangeFactor;
+  const marker = nearestPosTo(base, oppTeam.players);
+  let openSpot = base;
+  if (marker !== undefined && distance(base, marker) < markerRange) {
+    const awayFromMarker = sub(base, marker);
+    if (length(awayFromMarker) > 1e-6) {
+      openSpot = add(base, scale(normalize(awayFromMarker), p.markerAvoidStepDistance));
+    }
+  }
+  // x同様にyもhomeと少しブレンドする。以前はyをopenSpotのまま採用していたため、ボール保持中の
+  // 非保持選手が全員「ボールから同じ前進距離だけ進んだ同じ高さ」に並び、役割に関わらず
+  // 常に同じ横一列の陣形に見えてしまっていた（ユーザー指摘、2026-08-08）。receivingHomeBlendY
+  // の比率だけhomeへ寄せることで、DF役割（home が自ゴール寄り）は上がりすぎず、FW役割は
+  // 高い位置を取るという役割ごとの差がにじみ出るようにする（xのような50/50ブレンドだと
+  // 前進が阻害され得点が壊滅する非線形な閾値があったため、小さめの比率に留めている）。
+  const target = {
+    x: (openSpot.x + home.x) / 2,
+    y: openSpot.y * (1 - p.receivingHomeBlendY) + home.y * p.receivingHomeBlendY,
+  };
+  return applyTeammateRepulsion(player, target, myTeam, p);
+}
+
+/**
+ * マイルストーンN-2: Support/BackSupport/LateralSupport を intent 機構で管理する。
+ * 種別選択（`chance()` を伴う）は maxDurationTurns 経過まで固定し、目標地点は
+ * 種別が同じでも毎ターン再計算する（ボール追従が古くならないようにするため。
+ * 設計判断の詳細は `specification/features_intent_state_machine.md` 参照）。
+ */
+function resolveSupportIntentTarget(player: Player, state: GameState, config: GameConfig): Vec2 {
+  const isSupportFamily = SUPPORT_INTENT_TYPES.includes(player.intent.type);
+  const expired = isSupportFamily && state.turn - player.intent.startedAtTurn >= player.intent.maxDurationTurns;
+
+  if (!isSupportFamily || expired) {
+    player.intent = {
+      type: chooseSupportIntentType(player, state, config),
+      startedAtTurn: state.turn,
+      minDurationTurns: config.ai.intent.supportMinDurationTurns,
+      maxDurationTurns: config.ai.intent.supportMaxDurationTurns,
+    };
+  }
+
+  return computeSupportIntentTarget(
+    player.intent.type as "Support" | "BackSupport" | "LateralSupport",
+    player,
+    state,
+    config
+  );
 }
 
 function decideDefensiveAction(player: Player, state: GameState, config: GameConfig): void {

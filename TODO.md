@@ -40,7 +40,7 @@
 現行の `decideAction`/`computeTargetPosition` は非保持時の移動先を毎ターンゼロから計算し直しており、境界値付近で選手の行き先がターンごとに反転する「フラフラ」の原因になっている。設計は [`specification/features_intent_state_machine.md`](specification/features_intent_state_machine.md) を参照（設計のみ・未着手）。ブランチ: `feature/player-intent-state-machine`。
 
 - [x] N-1: `Player.intent` フィールド基盤（choose/execute分離）を導入し、`ChaseLooseBall` のみ intent 化する最小検証ステップ。受け入れ基準はbalance-checkでの統計的分布の同等性（完全一致は求めない）。20シード比較で総得点8.60→8.90、勝敗分布も既存のB優位傾向を維持したまま（同等と判断、`chaseLooseBallMaxDurationTurns=5`）
-- [ ] N-2: `decideSupportAction` 内の `Support`/`BackSupport`/`LateralSupport` を intent 化し `minDurationTurns` を導入。balance-check で受け手のジグザグ・平均得点を導入前後で比較
+- [x] N-2: `decideSupportAction`/`decideFreeBallAction` が共有する `computeTargetPosition` 内の `Support`/`BackSupport`/`LateralSupport` 選択を intent 化（`resolveSupportIntentTarget`）。20シード比較で総得点8.65（N-1後8.90、導入前8.60）、勝敗分布もN-1直後にあったB偏り(6/13/1)が緩和(9/8/3)し同等と判断。`supportMinDurationTurns=4`/`supportMaxDurationTurns=12`
 - [ ] N-3: `WaitOnside`/`RunBehind` を新設し、既存オフサイドフラグ（`avoidanceEnabled`/`enforcementEnabled`）とは別フラグで単独評価できるようにする
 - [ ] N-4: 守備側（`decideDefensiveAction`。`Cover`/`Press` を含む）を intent 化
 
