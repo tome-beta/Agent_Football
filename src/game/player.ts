@@ -576,19 +576,67 @@ function computeTargetPosition(player: Player, state: GameState, config: GameCon
   return applyTeammateRepulsion(player, target, myTeam, p);
 }
 
-const SUPPORT_INTENT_TYPES: readonly PlayerIntentType[] = ["Support", "BackSupport", "LateralSupport"];
+type SupportFamilyIntentType = "Support" | "BackSupport" | "LateralSupport" | "WaitOnside" | "RunBehind";
+
+const SUPPORT_INTENT_TYPES: readonly PlayerIntentType[] = [
+  "Support",
+  "BackSupport",
+  "LateralSupport",
+  "WaitOnside",
+  "RunBehind",
+];
 
 /**
- * 味方保持中/フリーボール時の非保持選手が Support/BackSupport/LateralSupport のどれを
- * 選ぶか（`chance()` を伴う低頻度の意図選択）。RNG消費順序は旧 `computeTargetPosition`
- * の else 分岐と完全に同じ順序を保つ（BackSupport判定 → [avoidanceEnabled時のみ]
- * LateralSupport判定）。
+ * player が今、オフサイドラインの近く（`frontLineProximityMeters` 未満）にいるか。
+ * 役割では判定しない — `isLastManBack` と対称的に、その時々の実位置で動的に判定する。
+ * 1人に限定しない（3対3では前線に複数人が同時に並ぶ局面が普通にあるため）。
  */
-function chooseSupportIntentType(
-  player: Player,
-  state: GameState,
-  config: GameConfig
-): "Support" | "BackSupport" | "LateralSupport" {
+function isNearOffsideLine(player: Player, state: GameState, config: GameConfig): boolean {
+  const oppTeam = state.teams[opposite(player.team)];
+  const lineY = offsideLineY(player.team, oppTeam, state.ball.pos, config);
+  return Math.abs(player.pos.y - lineY) < config.ai.offside.frontLineProximityMeters;
+}
+
+/**
+ * マイルストーンN-3（`specification/features_intent_state_machine.md`）。`WaitOnside`
+ * （ラインの手前で待つ）から `RunBehind`（裏へ抜ける）へ切り替えてよいかの複合条件。
+ * 「ボール保持者が前を向いている」「自分がオンサイド」「マーク圧力が低い」の3つすべてを
+ * 満たす必要がある。決定論的な条件判定であり、`chance()` は使わない
+ * （検討メモの遷移条件をそのまま条件式にする設計）。
+ */
+function canRunBehind(player: Player, state: GameState, config: GameConfig): boolean {
+  const { ball } = state;
+  if (ball.possessorId === null) return false;
+  const myTeam = state.teams[player.team];
+  const possessor = myTeam.players.find((pl) => pl.id === ball.possessorId);
+  if (possessor === undefined) return false;
+
+  const attackSign = player.team === "A" ? 1 : -1;
+  const facingForward = facingDirection(possessor).y * attackSign >= 0;
+
+  const oppTeam = state.teams[opposite(player.team)];
+  const onside = !isOffside(player.pos, player.team, oppTeam, possessor.pos, config);
+
+  const markingRange = config.ai.tackleDistance * config.ai.markedRadiusFactor;
+  const nearestOppDist = Math.min(...oppTeam.players.map((o) => distance(o.pos, player.pos)));
+  const lowPressure = nearestOppDist >= markingRange;
+
+  return facingForward && onside && lowPressure;
+}
+
+/**
+ * 味方保持中/フリーボール時の非保持選手が Support/BackSupport/LateralSupport/WaitOnside/
+ * RunBehind のどれを選ぶか。RNG消費順序は旧 `computeTargetPosition` の else 分岐と
+ * 完全に同じ順序を保つ（BackSupport判定 → [avoidanceEnabled時のみ] LateralSupport判定）。
+ * WaitOnside/RunBehind は `stateBasedWaitEnabled` が有効かつオフサイドライン付近の
+ * 選手にのみ適用され、決定論的に選ばれる（`chance()` を消費しないため、無効時は
+ * 既存のRNG列に一切影響しない）。
+ */
+function chooseSupportIntentType(player: Player, state: GameState, config: GameConfig): SupportFamilyIntentType {
+  if (config.ai.offside.stateBasedWaitEnabled && isNearOffsideLine(player, state, config)) {
+    return canRunBehind(player, state, config) ? "RunBehind" : "WaitOnside";
+  }
+
   const p = config.ai.positioning;
 
   // 味方保持中/フリーボール時、受け手ポジションは常にボールより前方にしか生まれない
@@ -623,16 +671,54 @@ function chooseSupportIntentType(
 }
 
 /**
+ * `WaitOnside` の目標地点: オフサイドラインから `waitOnsideMarginMeters` だけ手前
+ * （自ゴール側）で待つ。x は home.x をそのまま使い、横方向の陣形は崩さない。
+ */
+function computeWaitOnsideTarget(player: Player, state: GameState, config: GameConfig): Vec2 {
+  const home = formationPos(player.team, player.role, config);
+  const myTeam = state.teams[player.team];
+  const oppTeam = state.teams[opposite(player.team)];
+  const p = config.ai.positioning;
+
+  const lineY = offsideLineY(player.team, oppTeam, state.ball.pos, config);
+  const margin = config.ai.offside.waitOnsideMarginMeters;
+  const targetY = player.team === "A" ? lineY - margin : lineY + margin;
+
+  return applyTeammateRepulsion(player, { x: home.x, y: targetY }, myTeam, p);
+}
+
+/**
+ * `RunBehind` の目標地点: オフサイドラインぎりぎり手前（`lineToleranceMeters` の半分
+ * だけ余裕を残した位置）まで一気に上がる。`WaitOnside` よりラインに近い分、
+ * 「抜ける」動きの質的な違いを表現する。
+ */
+function computeRunBehindTarget(player: Player, state: GameState, config: GameConfig): Vec2 {
+  const home = formationPos(player.team, player.role, config);
+  const myTeam = state.teams[player.team];
+  const oppTeam = state.teams[opposite(player.team)];
+  const p = config.ai.positioning;
+
+  const lineY = offsideLineY(player.team, oppTeam, state.ball.pos, config);
+  const safety = config.ai.offside.lineToleranceMeters * 0.5;
+  const targetY = player.team === "A" ? lineY - safety : lineY + safety;
+
+  return applyTeammateRepulsion(player, { x: home.x, y: targetY }, myTeam, p);
+}
+
+/**
  * 選択済みの意図種別に対する目標地点を、毎ターン再計算する（`target` は intent に
  * 持たせず、type だけを固定する設計。`specification/features_intent_state_machine.md`）。
  * repulsion 適用までこの関数の中で完結させる。
  */
 function computeSupportIntentTarget(
-  type: "Support" | "BackSupport" | "LateralSupport",
+  type: SupportFamilyIntentType,
   player: Player,
   state: GameState,
   config: GameConfig
 ): Vec2 {
+  if (type === "WaitOnside") return computeWaitOnsideTarget(player, state, config);
+  if (type === "RunBehind") return computeRunBehindTarget(player, state, config);
+
   const home = formationPos(player.team, player.role, config);
   const own = ownGoal(player.team, config);
   const { ball } = state;
@@ -701,25 +787,30 @@ function computeSupportIntentTarget(
  * 種別が同じでも毎ターン再計算する（ボール追従が古くならないようにするため。
  * 設計判断の詳細は `specification/features_intent_state_machine.md` 参照）。
  */
+function intentDurationsFor(
+  type: SupportFamilyIntentType,
+  config: GameConfig
+): { min: number; max: number } {
+  if (type === "WaitOnside") {
+    return { min: config.ai.intent.waitOnsideMinDurationTurns, max: config.ai.intent.waitOnsideMaxDurationTurns };
+  }
+  if (type === "RunBehind") {
+    return { min: config.ai.intent.runBehindMinDurationTurns, max: config.ai.intent.runBehindMaxDurationTurns };
+  }
+  return { min: config.ai.intent.supportMinDurationTurns, max: config.ai.intent.supportMaxDurationTurns };
+}
+
 function resolveSupportIntentTarget(player: Player, state: GameState, config: GameConfig): Vec2 {
   const isSupportFamily = SUPPORT_INTENT_TYPES.includes(player.intent.type);
   const expired = isSupportFamily && state.turn - player.intent.startedAtTurn >= player.intent.maxDurationTurns;
 
   if (!isSupportFamily || expired) {
-    player.intent = {
-      type: chooseSupportIntentType(player, state, config),
-      startedAtTurn: state.turn,
-      minDurationTurns: config.ai.intent.supportMinDurationTurns,
-      maxDurationTurns: config.ai.intent.supportMaxDurationTurns,
-    };
+    const type = chooseSupportIntentType(player, state, config);
+    const { min, max } = intentDurationsFor(type, config);
+    player.intent = { type, startedAtTurn: state.turn, minDurationTurns: min, maxDurationTurns: max };
   }
 
-  return computeSupportIntentTarget(
-    player.intent.type as "Support" | "BackSupport" | "LateralSupport",
-    player,
-    state,
-    config
-  );
+  return computeSupportIntentTarget(player.intent.type as SupportFamilyIntentType, player, state, config);
 }
 
 function decideDefensiveAction(player: Player, state: GameState, config: GameConfig): void {

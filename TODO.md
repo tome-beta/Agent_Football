@@ -41,7 +41,7 @@
 
 - [x] N-1: `Player.intent` フィールド基盤（choose/execute分離）を導入し、`ChaseLooseBall` のみ intent 化する最小検証ステップ。受け入れ基準はbalance-checkでの統計的分布の同等性（完全一致は求めない）。20シード比較で総得点8.60→8.90、勝敗分布も既存のB優位傾向を維持したまま（同等と判断、`chaseLooseBallMaxDurationTurns=5`）
 - [x] N-2: `decideSupportAction`/`decideFreeBallAction` が共有する `computeTargetPosition` 内の `Support`/`BackSupport`/`LateralSupport` 選択を intent 化（`resolveSupportIntentTarget`）。20シード比較で総得点8.65（N-1後8.90、導入前8.60）、勝敗分布もN-1直後にあったB偏り(6/13/1)が緩和(9/8/3)し同等と判断。`supportMinDurationTurns=4`/`supportMaxDurationTurns=12`
-- [ ] N-3: `WaitOnside`/`RunBehind` を新設し、既存オフサイドフラグ（`avoidanceEnabled`/`enforcementEnabled`）とは別フラグで単独評価できるようにする
+- [x] N-3: `WaitOnside`/`RunBehind` intentを新設し、既存オフサイドフラグとは別の `stateBasedWaitEnabled` で単独評価できるようにした。**既知の制約**: 20シードのbalance-checkで有効化すると平均得点0.00（全試合0-0）の崩壊を確認（原因はGK不在で守備ラインごと自陣深くまで下がる場面にWaitOnside/RunBehindが素朴に追従してしまうため。詳細は`src/config/default.ts`の`stateBasedWaitEnabled`コメント参照）。`avoidanceEnabled`で過去に確認された崩壊と同系統。デフォルトは無効のまま維持し、再挑戦は「オフサイド ステップ2 再挑戦（保留中）」と合わせて後日
 - [ ] N-4: 守備側（`decideDefensiveAction`。`Cover`/`Press` を含む）を intent 化
 
 ### オフサイド ステップ2 再挑戦（保留中）

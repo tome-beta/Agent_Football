@@ -114,6 +114,20 @@ export const defaultConfig: GameConfig = {
       // 再挑戦には受け手ポジショニングのさらなる改善（方式D等、自然なオフサイド率20%未満が
       // 目安）が前提。詳細: specification/features_offside.md
       enforcementEnabled: false,
+      // マイルストーンN-3。WaitOnside/RunBehind intentによる状態遷移を単独評価するための
+      // フラグ。avoidanceEnabled/enforcementEnabledとは独立。
+      // 2026-08-14、20シードのbalance-checkでtrueにすると平均得点0.00（全試合0-0）の
+      // 致命的崩壊を確認した。原因: offsideLineYは「最終ラインかボールか、より進んでいる方」
+      // を採用する定義のため、GK不在で守備側3人がボール際に深く集まる場面（このゲームでは
+      // 頻発）でラインごと自陣深くまで下がる。WaitOnside/RunBehindの目標地点が素朴に
+      // このラインを基準にしているため、FWがラインに追従して自陣付近まで下がりきってしまい
+      // 攻撃が組み立てられなくなる。avoidanceEnabled有効化時に確認されていたのと同じ崩壊
+      // パターン（このファイル内のavoidanceEnabledコメント参照）。再挑戦するには、既存の
+      // Support計算にあるforwardReachFraction/receivingDistance相当の「どこまで下がって
+      // 良いかの下限」をWaitOnside/RunBehindにも導入する必要がある。デフォルトは無効のまま維持。
+      stateBasedWaitEnabled: false,
+      frontLineProximityMeters: 10, // オフサイドラインからこの距離[m]未満をintent対象とする
+      waitOnsideMarginMeters: 3, // WaitOnside中、ラインからこれだけ手前で待機する [m]
       lineToleranceMeters: 0.5, // 同一ラインとみなす許容誤差 [m]
       // 0.05/0.1/0.15/0.2/0.3/0.5/0.6/0.8/1.0 を比較。0.2以下は逆に悪化する
       // （オフサイド率75%超・平均得点も低下）。0.3が最良の組み合わせ（自然な
@@ -147,6 +161,11 @@ export const defaultConfig: GameConfig = {
       // dt=0.1秒換算した値。balance-checkで統計的同等性を確認済み（マイルストーンN-2）。
       supportMinDurationTurns: 4, // 4ターン=0.4秒
       supportMaxDurationTurns: 12, // 12ターン=1.2秒
+      // WaitOnside/RunBehindはSupport系より短命（局面変化への反応速度を優先）。
+      waitOnsideMinDurationTurns: 3, // 3ターン=0.3秒
+      waitOnsideMaxDurationTurns: 10, // 10ターン=1.0秒
+      runBehindMinDurationTurns: 2, // 2ターン=0.2秒
+      runBehindMaxDurationTurns: 6, // 6ターン=0.6秒
     },
   },
   team: {
