@@ -37,7 +37,12 @@ export class Simulator {
     const players = this.allPlayers();
 
     if (ACTIVE_PHASES.includes(state.phase)) {
-      for (const player of players) decideAction(player, state, config);
+      const logger = this.logger;
+      const onIntentChange = logger
+        ? (playerId: string, from: Player["intent"]["type"], to: Player["intent"]["type"]) =>
+            logger.logIntentChange(playerId, from, to, state.turn)
+        : undefined;
+      for (const player of players) decideAction(player, state, config, onIntentChange);
       for (const player of players) stepPlayer(player, config);
       const prevBallPos = { ...state.ball.pos };
       stepBall(state.ball, config);

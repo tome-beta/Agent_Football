@@ -1,4 +1,15 @@
-import type { Player, PlayerParams, Role, Team, TeamSide, Vec2, GameState, GameConfig } from "../types";
+import type {
+  Player,
+  PlayerIntentType,
+  PlayerParams,
+  Role,
+  Team,
+  TeamSide,
+  Vec2,
+  GameState,
+  GameConfig,
+  IntentChangeCallback,
+} from "../types";
 import { add, sub, scale, length, normalize, distance, clampMagnitude } from "./utils";
 import { kickBall } from "./ball";
 import { nextRandomRange, chance } from "./random";
@@ -21,6 +32,7 @@ export function createPlayer(
     pos: { ...homePos },
     vel: { x: 0, y: 0 },
     state: "Idle",
+    intent: { type: "Idle", startedAtTurn: 0, minDurationTurns: 0, maxDurationTurns: 0 },
     stunTurns: 0,
   };
 }
@@ -499,176 +511,491 @@ function computeLateralSupportTarget(player: Player, home: Vec2, ballPos: Vec2, 
  *
  * 最後に、味方が minSpacing 未満に近づいていれば離れる方向へ補正する（teammateRepulsion）。
  */
-function computeTargetPosition(player: Player, state: GameState, config: GameConfig): Vec2 {
+function computeTargetPosition(
+  player: Player,
+  state: GameState,
+  config: GameConfig,
+  onIntentChange?: IntentChangeCallback
+): Vec2 {
+  const { ball } = state;
+  const oppTeam = state.teams[opposite(player.team)];
+  const carrier = ball.possessorId !== null ? oppTeam.players.find((o) => o.id === ball.possessorId) : undefined;
+
+  // Cover/Press（敵保持中）・Support系（味方保持中/フリーボール）はいずれも
+  // マイルストーンN-4/N-2でintent機構に移した。repulsion適用まで各resolve関数の
+  // 中で完結させるため、ここでは早期returnするだけにする。
+  return carrier !== undefined
+    ? resolveDefensiveIntentTarget(player, state, config, carrier, onIntentChange)
+    : resolveSupportIntentTarget(player, state, config, onIntentChange);
+}
+
+type DefensiveFamilyIntentType = "Cover" | "Press";
+
+const DEFENSIVE_INTENT_TYPES: readonly PlayerIntentType[] = ["Cover", "Press"];
+
+/**
+ * 敵ボール保持中の「基本カバーポジション」を計算する（Press判定より前段の共通処理）。
+ * ボール追従・ボール-自ゴール線への射影・ゴール前危険度に応じた戻りとゴール幅カバーを
+ * 合成する。Press intentのときもこの基準位置に詰め寄りブレンドを上乗せするだけなので、
+ * どちらの intent でも必ずこの計算を通る。
+ */
+function computeCoverBaselineTarget(player: Player, ballPos: Vec2, config: GameConfig): Vec2 {
+  const home = formationPos(player.team, player.role, config);
+  const own = ownGoal(player.team, config);
+  const p = config.ai.positioning;
+
+  const idealFollowDist = distance(home, own) * p.ballPullWeight;
+  let target = add(home, clampMagnitude(sub(ballPos, home), idealFollowDist));
+
+  const lineVec = sub(ballPos, own);
+  const lineLenSq = lineVec.x * lineVec.x + lineVec.y * lineVec.y;
+  if (lineLenSq > 1e-6) {
+    const t = Math.max(0, Math.min(1, ((target.x - own.x) * lineVec.x + (target.y - own.y) * lineVec.y) / lineLenSq));
+    const projected = add(own, scale(lineVec, t));
+    target = add(target, scale(sub(projected, target), p.coverWeight));
+  }
+
+  // ゴール前カバーは coverWeight により全員が「ボール-自ゴール中心」の同一線上に
+  // 収束するため、ボールが自陣深くまで来ても中央1点に団子化してポストが空きがちだった
+  // （ユーザー指摘、2026-08-08）。ボールが goalCoverDangerDistance 圏内に入ったら、
+  // home.x の符号・大きさ（DF=中央/MF=左寄り/FW=右寄り、features_1のフォーメーション比率）
+  // に応じてゴール幅方向へ広がるよう横方向にオフセットし、簡易的な「壁」を作る。
+  // 役割で分岐せず home.x という連続値だけを使うため、フォーメーションを変えれば
+  // 広がり方も自然に追従する。
+  const distToOwnGoal = distance(ballPos, own);
+  const danger = Math.max(0, Math.min(1, 1 - distToOwnGoal / p.goalCoverDangerDistance));
+  if (danger > 0) {
+    // 上のcoverWeight射影は「ホームからidealFollowDist以内でボールへ寄った点」を線に
+    // 投影するだけなので、ホームが浅い選手（MF/FW）は危険度が上がっても射影先(t)が
+    // ゴール寄りに寄り切らず、自ゴールへの戻りが途中で頭打ちになっていた
+    // （ユーザー指摘、2026-08-08。攻め上がった選手のリカバリーを再現するテストで確認）。
+    // 危険度に比例して target.y を own.y へ直接引き寄せることで、コース射影の限界に
+    // 関係なく確実にゴール方向へ戻る力を保証する。
+    target.y += (own.y - target.y) * danger * p.goalRecallWeight;
+    if (Math.abs(home.x) > 1e-6) {
+      target.x += Math.sign(home.x) * p.goalMouthSpreadDistance * danger;
+    }
+  }
+
+  return target;
+}
+
+/**
+ * Cover/Press のどちらを選ぶか（マイルストーンN-4）。RNG消費順序は旧
+ * `computeTargetPosition` のcarrier分岐と完全に同じ順序を保つ（pressDistance圏外なら
+ * chance()を消費せず即Cover）。
+ */
+function chooseDefensiveIntentType(
+  player: Player,
+  state: GameState,
+  config: GameConfig,
+  carrier: Player
+): DefensiveFamilyIntentType {
+  const p = config.ai.positioning;
+  const myTeam = state.teams[player.team];
+  const own = ownGoal(player.team, config);
+
+  const dCarrier = distance(player.pos, carrier.pos);
+  if (dCarrier > p.pressDistance) return "Cover";
+
+  // 詰め寄るかどうかは役割ではなく mental に応じた確率で決める。mental が高い選手ほど
+  // 積極的に前へ出る傾向がにじみ出る（features_1/開発メモの「役割分岐にしない」方針に沿う）。
+  let pressChance = Math.max(0, Math.min(1, p.pressChanceBase + (player.params.mental - 0.5) * p.pressChanceSpread));
+  // pressDistance がピッチ規模に対して広いため、3人全員が同時に詰め寄り候補になり
+  // ゴール前のカバーが誰もいなくなる場面が頻発していた（ユーザー指摘、2026-08-08）。
+  // 最も自ゴールに近い選手（＝その瞬間の最終ライン）だけはプレスを抑制し、カバー
+  // リング位置に留まりやすくする。役割固定ではなく毎ターンの実位置で判定するため、
+  // 誰が最終ラインを担うかは局面に応じて入れ替わる。
+  if (isLastManBack(player, myTeam, own)) {
+    pressChance *= p.lastManPressSuppression;
+  }
+  return chance(state, pressChance) ? "Press" : "Cover";
+}
+
+/**
+ * 選択済みの意図種別に対する目標地点を、毎ターン再計算する（`target` は intent に
+ * 持たせず、type だけを固定する設計。`specification/features_intent_state_machine.md`）。
+ * Press でも常にcoverベース位置を土台にする — dCarrierがpressDistanceを超えていれば
+ * 詰め寄りブレンドは自動的にスキップされ、Coverと同じ目標地点になる（intentの種別は
+ * Pressのまま維持しつつ、実際の追従は現在の距離に応じて毎ターン調整される）。
+ */
+function computeDefensiveIntentTarget(
+  type: DefensiveFamilyIntentType,
+  player: Player,
+  state: GameState,
+  config: GameConfig,
+  carrier: Player
+): Vec2 {
+  const { ball } = state;
+  const p = config.ai.positioning;
+  const myTeam = state.teams[player.team];
+  const own = ownGoal(player.team, config);
+
+  let target = computeCoverBaselineTarget(player, ball.pos, config);
+
+  if (type === "Press") {
+    const dCarrier = distance(player.pos, carrier.pos);
+    if (dCarrier <= p.pressDistance) {
+      const strength = p.pressWeight * player.params.mental;
+      target = add(target, scale(sub(computeApproachPoint(player, carrier, myTeam, own, p), target), strength));
+    }
+  }
+
+  return applyTeammateRepulsion(player, target, myTeam, p);
+}
+
+function resolveDefensiveIntentTarget(
+  player: Player,
+  state: GameState,
+  config: GameConfig,
+  carrier: Player,
+  onIntentChange?: IntentChangeCallback
+): Vec2 {
+  const isDefensiveFamily = DEFENSIVE_INTENT_TYPES.includes(player.intent.type);
+  const expired = isDefensiveFamily && state.turn - player.intent.startedAtTurn >= player.intent.maxDurationTurns;
+
+  if (!isDefensiveFamily || expired) {
+    const type = chooseDefensiveIntentType(player, state, config, carrier);
+    if (onIntentChange && player.intent.type !== type) onIntentChange(player.id, player.intent.type, type);
+    const { min, max } =
+      type === "Press"
+        ? { min: config.ai.intent.pressMinDurationTurns, max: config.ai.intent.pressMaxDurationTurns }
+        : { min: config.ai.intent.coverMinDurationTurns, max: config.ai.intent.coverMaxDurationTurns };
+    player.intent = { type, startedAtTurn: state.turn, minDurationTurns: min, maxDurationTurns: max };
+  }
+
+  return computeDefensiveIntentTarget(player.intent.type as DefensiveFamilyIntentType, player, state, config, carrier);
+}
+
+type SupportFamilyIntentType = "Support" | "BackSupport" | "LateralSupport" | "WaitOnside" | "RunBehind";
+
+const SUPPORT_INTENT_TYPES: readonly PlayerIntentType[] = [
+  "Support",
+  "BackSupport",
+  "LateralSupport",
+  "WaitOnside",
+  "RunBehind",
+];
+
+/**
+ * player が今、オフサイドラインの近く（`frontLineProximityMeters` 未満）にいるか。
+ * 役割では判定しない — `isLastManBack` と対称的に、その時々の実位置で動的に判定する。
+ * 1人に限定しない（3対3では前線に複数人が同時に並ぶ局面が普通にあるため）。
+ */
+function isNearOffsideLine(player: Player, state: GameState, config: GameConfig): boolean {
+  const oppTeam = state.teams[opposite(player.team)];
+  const lineY = offsideLineY(player.team, oppTeam, state.ball.pos, config);
+  return Math.abs(player.pos.y - lineY) < config.ai.offside.frontLineProximityMeters;
+}
+
+/**
+ * マイルストーンN-3（`specification/features_intent_state_machine.md`）。`WaitOnside`
+ * （ラインの手前で待つ）から `RunBehind`（裏へ抜ける）へ切り替えてよいかの複合条件。
+ * 「ボール保持者が前を向いている」「自分がオンサイド」「マーク圧力が低い」の3つすべてを
+ * 満たす必要がある。決定論的な条件判定であり、`chance()` は使わない
+ * （検討メモの遷移条件をそのまま条件式にする設計）。
+ */
+function canRunBehind(player: Player, state: GameState, config: GameConfig): boolean {
+  const { ball } = state;
+  if (ball.possessorId === null) return false;
+  const myTeam = state.teams[player.team];
+  const possessor = myTeam.players.find((pl) => pl.id === ball.possessorId);
+  if (possessor === undefined) return false;
+
+  const attackSign = player.team === "A" ? 1 : -1;
+  const facingForward = facingDirection(possessor).y * attackSign >= 0;
+
+  const oppTeam = state.teams[opposite(player.team)];
+  const onside = !isOffside(player.pos, player.team, oppTeam, possessor.pos, config);
+
+  const markingRange = config.ai.tackleDistance * config.ai.markedRadiusFactor;
+  const nearestOppDist = Math.min(...oppTeam.players.map((o) => distance(o.pos, player.pos)));
+  const lowPressure = nearestOppDist >= markingRange;
+
+  return facingForward && onside && lowPressure;
+}
+
+/**
+ * 味方保持中/フリーボール時の非保持選手が Support/BackSupport/LateralSupport/WaitOnside/
+ * RunBehind のどれを選ぶか。RNG消費順序は旧 `computeTargetPosition` の else 分岐と
+ * 完全に同じ順序を保つ（BackSupport判定 → [avoidanceEnabled時のみ] LateralSupport判定）。
+ * WaitOnside/RunBehind は `stateBasedWaitEnabled` が有効かつオフサイドライン付近の
+ * 選手にのみ適用され、決定論的に選ばれる（`chance()` を消費しないため、無効時は
+ * 既存のRNG列に一切影響しない）。
+ */
+function chooseSupportIntentType(player: Player, state: GameState, config: GameConfig): SupportFamilyIntentType {
+  if (config.ai.offside.stateBasedWaitEnabled && isNearOffsideLine(player, state, config)) {
+    return canRunBehind(player, state, config) ? "RunBehind" : "WaitOnside";
+  }
+
+  const p = config.ai.positioning;
+
+  // 味方保持中/フリーボール時、受け手ポジションは常にボールより前方にしか生まれない
+  // 構造だと、保持者が孤立していてもバックパスという選択肢自体が存在しなかった
+  // （ユーザー指摘、2026-08-08）。mental が低い選手ほど、前進した受け手位置
+  // ではなくボールより自ゴール側の「バックサポート」位置を目指す確率を毎ターン振り、
+  // 役割分岐ではなくパラメータの違いがそのまま前方/後方志向の差ににじみ出るようにする。
+  const backSupportChance = Math.max(
+    0,
+    Math.min(1, p.backSupportChanceBase - (player.params.mental - 0.5) * p.backSupportMentalSpread)
+  );
+  if (chance(state, backSupportChance)) return "BackSupport";
+
+  // 前進（縦）とバックサポート（後退）の二択だけだと、前進レーンが塞がれた場面
+  // （オフサイド回避で前進が抑えられているときなど）の代替手段が乏しい。ボールとほぼ
+  // 同じ前進度を保ったまま逆サイドへ開く「横サポート」を第三の選択肢として加える
+  // （`specification/features_offside.md` の反則化崩壊を受けた対策、設計は会話ログ参照）。
+  // vision が広い選手ほど幅を使ったプレーを選びやすい。offsideRiskDribbleBoost と同様、
+  // avoidanceEnabled が無効なときは isOffside 系の評価自体が無意味なので分岐に入らず、
+  // chance() の乱数消費すら行わない（デフォルトのゲームバランス・RNG列に一切影響しない。
+  // balance-checkで確認済み: 乱数だけ消費する形にすると offside 無効時でも勝敗分布が
+  // 変わってしまった）。
+  if (config.ai.offside.avoidanceEnabled) {
+    const lateralSupportChance = Math.max(
+      0,
+      Math.min(1, p.lateralSupportChanceBase + (player.params.vision / 180 - 0.5) * p.lateralSupportVisionSpread)
+    );
+    if (chance(state, lateralSupportChance)) return "LateralSupport";
+  }
+
+  return "Support";
+}
+
+/**
+ * `WaitOnside` の目標地点: オフサイドラインから `waitOnsideMarginMeters` だけ手前
+ * （自ゴール側）で待つ。x は home.x をそのまま使い、横方向の陣形は崩さない。
+ */
+function computeWaitOnsideTarget(player: Player, state: GameState, config: GameConfig): Vec2 {
+  const home = formationPos(player.team, player.role, config);
+  const myTeam = state.teams[player.team];
+  const oppTeam = state.teams[opposite(player.team)];
+  const p = config.ai.positioning;
+
+  const lineY = offsideLineY(player.team, oppTeam, state.ball.pos, config);
+  const margin = config.ai.offside.waitOnsideMarginMeters;
+  const targetY = player.team === "A" ? lineY - margin : lineY + margin;
+
+  return applyTeammateRepulsion(player, { x: home.x, y: targetY }, myTeam, p);
+}
+
+/**
+ * `RunBehind` の目標地点: オフサイドラインぎりぎり手前（`lineToleranceMeters` の半分
+ * だけ余裕を残した位置）まで一気に上がる。`WaitOnside` よりラインに近い分、
+ * 「抜ける」動きの質的な違いを表現する。
+ */
+function computeRunBehindTarget(player: Player, state: GameState, config: GameConfig): Vec2 {
+  const home = formationPos(player.team, player.role, config);
+  const myTeam = state.teams[player.team];
+  const oppTeam = state.teams[opposite(player.team)];
+  const p = config.ai.positioning;
+
+  const lineY = offsideLineY(player.team, oppTeam, state.ball.pos, config);
+  const safety = config.ai.offside.lineToleranceMeters * 0.5;
+  const targetY = player.team === "A" ? lineY - safety : lineY + safety;
+
+  return applyTeammateRepulsion(player, { x: home.x, y: targetY }, myTeam, p);
+}
+
+/**
+ * 選択済みの意図種別に対する目標地点を、毎ターン再計算する（`target` は intent に
+ * 持たせず、type だけを固定する設計。`specification/features_intent_state_machine.md`）。
+ * repulsion 適用までこの関数の中で完結させる。
+ */
+function computeSupportIntentTarget(
+  type: SupportFamilyIntentType,
+  player: Player,
+  state: GameState,
+  config: GameConfig
+): Vec2 {
+  if (type === "WaitOnside") return computeWaitOnsideTarget(player, state, config);
+  if (type === "RunBehind") return computeRunBehindTarget(player, state, config);
+
   const home = formationPos(player.team, player.role, config);
   const own = ownGoal(player.team, config);
   const { ball } = state;
   const p = config.ai.positioning;
   const myTeam = state.teams[player.team];
   const oppTeam = state.teams[opposite(player.team)];
-  const carrier = ball.possessorId !== null ? oppTeam.players.find((o) => o.id === ball.possessorId) : undefined;
 
-  let target: Vec2;
-  if (carrier !== undefined) {
-    const idealFollowDist = distance(home, own) * p.ballPullWeight;
-    target = add(home, clampMagnitude(sub(ball.pos, home), idealFollowDist));
-
-    const lineVec = sub(ball.pos, own);
-    const lineLenSq = lineVec.x * lineVec.x + lineVec.y * lineVec.y;
-    if (lineLenSq > 1e-6) {
-      const t = Math.max(0, Math.min(1, ((target.x - own.x) * lineVec.x + (target.y - own.y) * lineVec.y) / lineLenSq));
-      const projected = add(own, scale(lineVec, t));
-      target = add(target, scale(sub(projected, target), p.coverWeight));
-    }
-
-    // ゴール前カバーは coverWeight により全員が「ボール-自ゴール中心」の同一線上に
-    // 収束するため、ボールが自陣深くまで来ても中央1点に団子化してポストが空きがちだった
-    // （ユーザー指摘、2026-08-08）。ボールが goalCoverDangerDistance 圏内に入ったら、
-    // home.x の符号・大きさ（DF=中央/MF=左寄り/FW=右寄り、features_1のフォーメーション比率）
-    // に応じてゴール幅方向へ広がるよう横方向にオフセットし、簡易的な「壁」を作る。
-    // 役割で分岐せず home.x という連続値だけを使うため、フォーメーションを変えれば
-    // 広がり方も自然に追従する。
-    const distToOwnGoal = distance(ball.pos, own);
-    const danger = Math.max(0, Math.min(1, 1 - distToOwnGoal / p.goalCoverDangerDistance));
-    if (danger > 0) {
-      // 上のcoverWeight射影は「ホームからidealFollowDist以内でボールへ寄った点」を線に
-      // 投影するだけなので、ホームが浅い選手（MF/FW）は危険度が上がっても射影先(t)が
-      // ゴール寄りに寄り切らず、自ゴールへの戻りが途中で頭打ちになっていた
-      // （ユーザー指摘、2026-08-08。攻め上がった選手のリカバリーを再現するテストで確認）。
-      // 危険度に比例して target.y を own.y へ直接引き寄せることで、コース射影の限界に
-      // 関係なく確実にゴール方向へ戻る力を保証する。
-      target.y += (own.y - target.y) * danger * p.goalRecallWeight;
-      if (Math.abs(home.x) > 1e-6) {
-        target.x += Math.sign(home.x) * p.goalMouthSpreadDistance * danger;
-      }
-    }
-
-    const dCarrier = distance(player.pos, carrier.pos);
-    if (dCarrier <= p.pressDistance) {
-      // 詰め寄るかどうかは役割ではなく mental に応じた確率で毎ターン決める。
-      // これにより同じ場面でも選手の反応が毎回変わり、かつ mental が高い選手ほど
-      // 積極的に前へ出る傾向がにじみ出る（features_1/開発メモの「役割分岐にしない」方針に沿う）。
-      let pressChance = Math.max(
-        0,
-        Math.min(1, p.pressChanceBase + (player.params.mental - 0.5) * p.pressChanceSpread)
-      );
-      // pressDistance がピッチ規模に対して広いため、3人全員が同時に詰め寄り候補になり
-      // ゴール前のカバーが誰もいなくなる場面が頻発していた（ユーザー指摘、2026-08-08）。
-      // 最も自ゴールに近い選手（＝その瞬間の最終ライン）だけはプレスを抑制し、カバー
-      // リング位置に留まりやすくする。役割固定ではなく毎ターンの実位置で判定するため、
-      // 誰が最終ラインを担うかは局面に応じて入れ替わる。
-      if (isLastManBack(player, myTeam, own)) {
-        pressChance *= p.lastManPressSuppression;
-      }
-      if (chance(state, pressChance)) {
-        const strength = p.pressWeight * player.params.mental;
-        target = add(target, scale(sub(computeApproachPoint(player, carrier, myTeam, own, p), target), strength));
-      }
-    }
-  } else {
-    const goal = attackGoal(player.team, config);
-
-    // 味方保持中/フリーボール時、受け手ポジションは常にボールより前方にしか生まれない
-    // 構造だと、保持者が孤立していてもバックパスという選択肢自体が存在しなかった
-    // （ユーザー指摘、2026-08-08）。mental が低い選手ほど、前進した受け手位置
-    // ではなくボールより自ゴール側の「バックサポート」位置を目指す確率を毎ターン振り、
-    // 役割分岐ではなくパラメータの違いがそのまま前方/後方志向の差ににじみ出るようにする。
-    const backSupportChance = Math.max(
-      0,
-      Math.min(1, p.backSupportChanceBase - (player.params.mental - 0.5) * p.backSupportMentalSpread)
+  if (type === "BackSupport") {
+    return applyTeammateRepulsion(
+      player,
+      computeBackSupportTarget(player, home, ball.pos, own, oppTeam, config),
+      myTeam,
+      p
     );
-    if (chance(state, backSupportChance)) {
-      target = computeBackSupportTarget(player, home, ball.pos, own, oppTeam, config);
-      target = applyTeammateRepulsion(player, target, myTeam, p);
-      return target;
-    }
-
-    // 前進（縦）とバックサポート（後退）の二択だけだと、前進レーンが塞がれた場面
-    // （オフサイド回避で前進が抑えられているときなど）の代替手段が乏しい。ボールとほぼ
-    // 同じ前進度を保ったまま逆サイドへ開く「横サポート」を第三の選択肢として加える
-    // （`specification/features_offside.md` の反則化崩壊を受けた対策、設計は会話ログ参照）。
-    // vision が広い選手ほど幅を使ったプレーを選びやすい。offsideRiskDribbleBoost と同様、
-    // avoidanceEnabled が無効なときは isOffside 系の評価自体が無意味なので分岐に入らず、
-    // chance() の乱数消費すら行わない（デフォルトのゲームバランス・RNG列に一切影響しない。
-    // balance-checkで確認済み: 乱数だけ消費する形にすると offside 無効時でも勝敗分布が
-    // 変わってしまった）。
-    if (config.ai.offside.avoidanceEnabled) {
-      const lateralSupportChance = Math.max(
-        0,
-        Math.min(1, p.lateralSupportChanceBase + (player.params.vision / 180 - 0.5) * p.lateralSupportVisionSpread)
-      );
-      if (chance(state, lateralSupportChance)) {
-        target = computeLateralSupportTarget(player, home, ball.pos, oppTeam, config);
-        target = applyTeammateRepulsion(player, target, myTeam, p);
-        return target;
-      }
-    }
-
-    const towardGoalDir = normalize(sub(goal, ball.pos));
-    let receivingDistance = config.ai.passDistance * p.receivingDistanceFactor;
-    // 受け手ポジションの前進距離を「ボールからゴールまでの残り距離」の一定割合でも頭打ちにする
-    // （方式A: features_positioning_redesign.md）。相手の実位置を一切参照しないため、相手の
-    // 守備ポジショニングと相互に反応し合うフィードバックループが構造的に発生しない。
-    if (config.ai.offside.avoidanceEnabled) {
-      const remainingToGoal = distance(ball.pos, goal);
-      const maxForward = Math.min(receivingDistance, remainingToGoal * config.ai.offside.forwardReachFraction);
-      // 方式Aの上限内で、前進度・オフサイドライン超過量・相手DFとの到達時間差を
-      // 同時にスコアリングして最良の前進距離を選ぶ（方式D）。
-      receivingDistance = selectReceivingDistance(player, ball.pos, towardGoalDir, maxForward, player.team, oppTeam, config);
-    }
-    const base = length(towardGoalDir) < 1e-6 ? home : add(ball.pos, scale(towardGoalDir, receivingDistance));
-
-    // 近くに敵がいるときだけ回避する（遠い敵に対してまで毎回markerAvoidStepDistanceずらすと無意味に揺れる）。
-    const markerRange = config.ai.passDistance * p.markerAvoidRangeFactor;
-    const marker = nearestPosTo(base, oppTeam.players);
-    let openSpot = base;
-    if (marker !== undefined && distance(base, marker) < markerRange) {
-      const awayFromMarker = sub(base, marker);
-      if (length(awayFromMarker) > 1e-6) {
-        openSpot = add(base, scale(normalize(awayFromMarker), p.markerAvoidStepDistance));
-      }
-    }
-    // x同様にyもhomeと少しブレンドする。以前はyをopenSpotのまま採用していたため、ボール保持中の
-    // 非保持選手が全員「ボールから同じ前進距離だけ進んだ同じ高さ」に並び、役割に関わらず
-    // 常に同じ横一列の陣形に見えてしまっていた（ユーザー指摘、2026-08-08）。receivingHomeBlendY
-    // の比率だけhomeへ寄せることで、DF役割（home が自ゴール寄り）は上がりすぎず、FW役割は
-    // 高い位置を取るという役割ごとの差がにじみ出るようにする（xのような50/50ブレンドだと
-    // 前進が阻害され得点が壊滅する非線形な閾値があったため、小さめの比率に留めている）。
-    target = {
-      x: (openSpot.x + home.x) / 2,
-      y: openSpot.y * (1 - p.receivingHomeBlendY) + home.y * p.receivingHomeBlendY,
-    };
+  }
+  if (type === "LateralSupport") {
+    return applyTeammateRepulsion(
+      player,
+      computeLateralSupportTarget(player, home, ball.pos, oppTeam, config),
+      myTeam,
+      p
+    );
   }
 
+  const goal = attackGoal(player.team, config);
+  const towardGoalDir = normalize(sub(goal, ball.pos));
+  let receivingDistance = config.ai.passDistance * p.receivingDistanceFactor;
+  // 受け手ポジションの前進距離を「ボールからゴールまでの残り距離」の一定割合でも頭打ちにする
+  // （方式A: features_positioning_redesign.md）。相手の実位置を一切参照しないため、相手の
+  // 守備ポジショニングと相互に反応し合うフィードバックループが構造的に発生しない。
+  if (config.ai.offside.avoidanceEnabled) {
+    const remainingToGoal = distance(ball.pos, goal);
+    const maxForward = Math.min(receivingDistance, remainingToGoal * config.ai.offside.forwardReachFraction);
+    // 方式Aの上限内で、前進度・オフサイドライン超過量・相手DFとの到達時間差を
+    // 同時にスコアリングして最良の前進距離を選ぶ（方式D）。
+    receivingDistance = selectReceivingDistance(player, ball.pos, towardGoalDir, maxForward, player.team, oppTeam, config);
+  }
+  const base = length(towardGoalDir) < 1e-6 ? home : add(ball.pos, scale(towardGoalDir, receivingDistance));
+
+  // 近くに敵がいるときだけ回避する（遠い敵に対してまで毎回markerAvoidStepDistanceずらすと無意味に揺れる）。
+  const markerRange = config.ai.passDistance * p.markerAvoidRangeFactor;
+  const marker = nearestPosTo(base, oppTeam.players);
+  let openSpot = base;
+  if (marker !== undefined && distance(base, marker) < markerRange) {
+    const awayFromMarker = sub(base, marker);
+    if (length(awayFromMarker) > 1e-6) {
+      openSpot = add(base, scale(normalize(awayFromMarker), p.markerAvoidStepDistance));
+    }
+  }
+  // x同様にyもhomeと少しブレンドする。以前はyをopenSpotのまま採用していたため、ボール保持中の
+  // 非保持選手が全員「ボールから同じ前進距離だけ進んだ同じ高さ」に並び、役割に関わらず
+  // 常に同じ横一列の陣形に見えてしまっていた（ユーザー指摘、2026-08-08）。receivingHomeBlendY
+  // の比率だけhomeへ寄せることで、DF役割（home が自ゴール寄り）は上がりすぎず、FW役割は
+  // 高い位置を取るという役割ごとの差がにじみ出るようにする（xのような50/50ブレンドだと
+  // 前進が阻害され得点が壊滅する非線形な閾値があったため、小さめの比率に留めている）。
+  const target = {
+    x: (openSpot.x + home.x) / 2,
+    y: openSpot.y * (1 - p.receivingHomeBlendY) + home.y * p.receivingHomeBlendY,
+  };
   return applyTeammateRepulsion(player, target, myTeam, p);
 }
 
-function decideDefensiveAction(player: Player, state: GameState, config: GameConfig): void {
+/**
+ * マイルストーンN-2: Support/BackSupport/LateralSupport を intent 機構で管理する。
+ * 種別選択（`chance()` を伴う）は maxDurationTurns 経過まで固定し、目標地点は
+ * 種別が同じでも毎ターン再計算する（ボール追従が古くならないようにするため。
+ * 設計判断の詳細は `specification/features_intent_state_machine.md` 参照）。
+ */
+function intentDurationsFor(
+  type: SupportFamilyIntentType,
+  config: GameConfig
+): { min: number; max: number } {
+  if (type === "WaitOnside") {
+    return { min: config.ai.intent.waitOnsideMinDurationTurns, max: config.ai.intent.waitOnsideMaxDurationTurns };
+  }
+  if (type === "RunBehind") {
+    return { min: config.ai.intent.runBehindMinDurationTurns, max: config.ai.intent.runBehindMaxDurationTurns };
+  }
+  return { min: config.ai.intent.supportMinDurationTurns, max: config.ai.intent.supportMaxDurationTurns };
+}
+
+function resolveSupportIntentTarget(
+  player: Player,
+  state: GameState,
+  config: GameConfig,
+  onIntentChange?: IntentChangeCallback
+): Vec2 {
+  const isSupportFamily = SUPPORT_INTENT_TYPES.includes(player.intent.type);
+  const expired = isSupportFamily && state.turn - player.intent.startedAtTurn >= player.intent.maxDurationTurns;
+
+  if (!isSupportFamily || expired) {
+    const type = chooseSupportIntentType(player, state, config);
+    if (onIntentChange && player.intent.type !== type) onIntentChange(player.id, player.intent.type, type);
+    const { min, max } = intentDurationsFor(type, config);
+    player.intent = { type, startedAtTurn: state.turn, minDurationTurns: min, maxDurationTurns: max };
+  }
+
+  return computeSupportIntentTarget(player.intent.type as SupportFamilyIntentType, player, state, config);
+}
+
+function decideDefensiveAction(
+  player: Player,
+  state: GameState,
+  config: GameConfig,
+  onIntentChange?: IntentChangeCallback
+): void {
   player.state = "Marking";
-  moveToward(player, computeTargetPosition(player, state, config), config);
+  moveToward(player, computeTargetPosition(player, state, config, onIntentChange), config);
 }
 
 /** 味方がボールを持っている間の受け手ポジショニング。 */
-function decideSupportAction(player: Player, state: GameState, config: GameConfig): void {
+function decideSupportAction(
+  player: Player,
+  state: GameState,
+  config: GameConfig,
+  onIntentChange?: IntentChangeCallback
+): void {
   player.state = "MovingToSpace";
-  moveToward(player, computeTargetPosition(player, state, config), config);
+  moveToward(player, computeTargetPosition(player, state, config, onIntentChange), config);
 }
 
-function decideFreeBallAction(player: Player, state: GameState, config: GameConfig): void {
+/**
+ * マイルストーンN-1（`specification/features_intent_state_machine.md`）: `ChaseLooseBall`
+ * 意図のみを Player.intent 機構で管理する最小検証ステップ。intentの「種別」だけを固定し、
+ * 実際の目標地点（ここでは ball.pos）は毎ターン再計算する（設計上の判断: targetをintentに
+ * 持たせるとボール追従が古くなるため）。
+ *
+ * 既にChaseLooseBall中なら、ボールに追いついた（reachedTarget）か
+ * chaseLooseBallMaxDurationTurns 経過（intentExpired）するまで、毎タームの
+ * 「誰が最寄りか」の再計算をスキップして同じ選手が追い続ける（役割の毎ターム反転防止）。
+ */
+function decideFreeBallAction(
+  player: Player,
+  state: GameState,
+  config: GameConfig,
+  onIntentChange?: IntentChangeCallback
+): void {
   const { ball } = state;
   const myTeam = state.teams[player.team];
 
-  let nearestTeammate = player;
-  let nearestDist = distance(player.pos, ball.pos);
-  for (const p of myTeam.players) {
-    const d = distance(p.pos, ball.pos);
-    if (d < nearestDist) {
-      nearestDist = d;
-      nearestTeammate = p;
+  const reachedBall = distance(player.pos, ball.pos) < config.ai.moveStopThreshold;
+  const intentExpired =
+    player.intent.type === "ChaseLooseBall" &&
+    state.turn - player.intent.startedAtTurn >= player.intent.maxDurationTurns;
+
+  // 「最寄りかどうか」を再判定するのは、まだChaseLooseBall中でない/ボールに追いついた/
+  // 期限切れのときだけ。これを毎ターン無条件に行うと、既にSupport系intentを持っている
+  // 非最寄り選手（intent.typeが"ChaseLooseBall"以外）が毎ターンここを通過するたびに
+  // Idleへ強制リセットされてしまい、N-2で入れたSupport系のminDuration/maxDuration
+  // スティッキネスがフリーボール中だけ効かなくなるバグがあった（状態遷移ログ導入時に発見）。
+  if (player.intent.type !== "ChaseLooseBall" || reachedBall || intentExpired) {
+    let nearestTeammate = player;
+    let nearestDist = distance(player.pos, ball.pos);
+    for (const p of myTeam.players) {
+      const d = distance(p.pos, ball.pos);
+      if (d < nearestDist) {
+        nearestDist = d;
+        nearestTeammate = p;
+      }
     }
+
+    const shouldChase =
+      nearestTeammate.id === player.id && distance(player.pos, ball.pos) <= config.ai.visionDistance;
+    if (shouldChase) {
+      if (onIntentChange && player.intent.type !== "ChaseLooseBall") {
+        onIntentChange(player.id, player.intent.type, "ChaseLooseBall");
+      }
+      player.intent = {
+        type: "ChaseLooseBall",
+        startedAtTurn: state.turn,
+        minDurationTurns: 0,
+        maxDurationTurns: config.ai.intent.chaseLooseBallMaxDurationTurns,
+      };
+    } else if (player.intent.type === "ChaseLooseBall") {
+      // ChaseLooseBallを卒業する。実際にどのSupport系intentへ移るかは、この関数の末尾で
+      // 呼ぶ computeTargetPosition -> resolveSupportIntentTarget に委ねる（ここで先に
+      // 具体的な型を決め打ちしない）。
+      if (onIntentChange) onIntentChange(player.id, player.intent.type, "Idle");
+      player.intent = { type: "Idle", startedAtTurn: state.turn, minDurationTurns: 0, maxDurationTurns: 0 };
+    }
+    // shouldChase===false かつ 現在の型が既にChaseLooseBall以外（Support系など）の場合は
+    // 何もしない。既存の意図（と残りduration）をそのまま維持し、reselectするかどうかは
+    // resolveSupportIntentTarget側のmin/maxDuration管理に委ねる。
   }
 
-  if (nearestTeammate.id === player.id && distance(player.pos, ball.pos) <= config.ai.visionDistance) {
+  if (player.intent.type === "ChaseLooseBall") {
     player.state = "BallTracking";
     moveToward(player, ball.pos, config);
   } else {
@@ -676,7 +1003,7 @@ function decideFreeBallAction(player: Player, state: GameState, config: GameConf
     // 時間が長く続くため、ここが素の formationPos だと味方の大半が毎回そこへ引き戻されて
     // しまい、「受けるための動き」が起きる前に消えてしまっていた。
     player.state = "MovingToSpace";
-    moveToward(player, computeTargetPosition(player, state, config), config);
+    moveToward(player, computeTargetPosition(player, state, config, onIntentChange), config);
   }
 }
 
@@ -690,8 +1017,16 @@ function decideFreeBallAction(player: Player, state: GameState, config: GameConf
  *   - フリーボール … 最も近い味方だけが追いかけ、他は受け手ポジションへ（decideFreeBallAction）
  *
  * ここでは state と vel だけを更新する。実際の位置更新は stepPlayer が行う。
+ *
+ * @param onIntentChange 選手の `intent.type` が切り替わるたびに呼ばれる任意コールバック
+ *   （状態遷移ログ用。`specification/選手思考の状態遷移を検討.md` 第5段階）。
  */
-export function decideAction(player: Player, state: GameState, config: GameConfig): void {
+export function decideAction(
+  player: Player,
+  state: GameState,
+  config: GameConfig,
+  onIntentChange?: IntentChangeCallback
+): void {
   const { ball } = state;
 
   // タックルで奪われた/かわされた直後の怯み中は、その場で停止して通常の意思決定をしない。
@@ -713,16 +1048,16 @@ export function decideAction(player: Player, state: GameState, config: GameConfi
   const possessorIsOpponent = ball.possessorId !== null && !possessorIsTeammate;
 
   if (possessorIsOpponent) {
-    decideDefensiveAction(player, state, config);
+    decideDefensiveAction(player, state, config, onIntentChange);
     return;
   }
 
   if (possessorIsTeammate) {
-    decideSupportAction(player, state, config);
+    decideSupportAction(player, state, config, onIntentChange);
     return;
   }
 
-  decideFreeBallAction(player, state, config);
+  decideFreeBallAction(player, state, config, onIntentChange);
 }
 
 /** decideAction が設定した vel に従って選手を1ターン分動かし、ピッチ内に収める。 */

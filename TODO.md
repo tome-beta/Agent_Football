@@ -35,6 +35,18 @@
 
 ## 未完了タスク
 
+### マイルストーンN: 選手AI 意図（Intent）ベース状態遷移の導入
+
+現行の `decideAction`/`computeTargetPosition` は非保持時の移動先を毎ターンゼロから計算し直しており、境界値付近で選手の行き先がターンごとに反転する「フラフラ」の原因になっている。設計は [`specification/features_intent_state_machine.md`](specification/features_intent_state_machine.md) を参照（設計のみ・未着手）。ブランチ: `feature/player-intent-state-machine`。
+
+- [x] N-1: `Player.intent` フィールド基盤（choose/execute分離）を導入し、`ChaseLooseBall` のみ intent 化する最小検証ステップ。受け入れ基準はbalance-checkでの統計的分布の同等性（完全一致は求めない）。20シード比較で総得点8.60→8.90、勝敗分布も既存のB優位傾向を維持したまま（同等と判断、`chaseLooseBallMaxDurationTurns=5`）
+- [x] N-2: `decideSupportAction`/`decideFreeBallAction` が共有する `computeTargetPosition` 内の `Support`/`BackSupport`/`LateralSupport` 選択を intent 化（`resolveSupportIntentTarget`）。20シード比較で総得点8.65（N-1後8.90、導入前8.60）、勝敗分布もN-1直後にあったB偏り(6/13/1)が緩和(9/8/3)し同等と判断。`supportMinDurationTurns=4`/`supportMaxDurationTurns=12`
+- [x] N-3: `WaitOnside`/`RunBehind` intentを新設し、既存オフサイドフラグとは別の `stateBasedWaitEnabled` で単独評価できるようにした。**既知の制約**: 20シードのbalance-checkで有効化すると平均得点0.00（全試合0-0）の崩壊を確認（原因はGK不在で守備ラインごと自陣深くまで下がる場面にWaitOnside/RunBehindが素朴に追従してしまうため。詳細は`src/config/default.ts`の`stateBasedWaitEnabled`コメント参照）。`avoidanceEnabled`で過去に確認された崩壊と同系統。デフォルトは無効のまま維持し、再挑戦は「オフサイド ステップ2 再挑戦（保留中）」と合わせて後日
+- [x] N-4: 守備側（`decideDefensiveAction`。`Cover`/`Press` を含む）を intent 化。`Cover`は常にベース位置として計算し、`Press`はその上に詰め寄りブレンドを乗せる構造のため、Support系と異なり決定論的な複合分岐ではなく「ベース＋オプション」の形でintent化した。20シード比較で総得点8.70（N-3時8.65）、勝敗9/10/1（N-3時9/8/3）と同等。`pressMinDurationTurns=1`/`pressMaxDurationTurns=3`（当初2/6で試したが14/20とB偏りが出たため短縮）
+- [x] N-5: 状態遷移ログ（`Logger.logIntentChange`、`decideAction` の任意コールバック `onIntentChange`）を追加。**導入時に実バグを発見**: `decideFreeBallAction` の再判定条件が緩く、フリーボール中は非追跡選手の意図が毎ターン強制的にIdleへリセットされ、N-2のSupport系スティッキネスがフリーボール中だけ効いていなかった。修正済み（`decideFreeBallAction` は自分がChaseLooseBallを離脱するときだけIdleを経由し、既存のSupport系intentには一切触れないよう変更）
+
+これでマイルストーンNのN-1〜N-5すべて完了。設計は[`specification/features_intent_state_machine.md`](specification/features_intent_state_machine.md)参照。
+
 ### オフサイド ステップ2 再挑戦（保留中）
 
 - [ ] 受け手ポジショニング側の改善はマイルストーンKで打ち切り。再挑戦するなら以下のいずれかが必要:

@@ -78,6 +78,7 @@ describe("Simulator.run", () => {
       logTurn: () => {},
       logGoal: (entry) => logged.goals.push(entry),
       logResult: (state) => logged.results.push(state),
+      logIntentChange: () => {},
     };
 
     const sim = new Simulator(fastConfig(), new NullRenderer(), logger);

@@ -17,6 +17,40 @@ export type PlayerActionState =
   | "Marking"
   | "MovingToSpace";
 
+/**
+ * 非保持時の複数ターンにまたがる「意図」（`specification/features_intent_state_machine.md`）。
+ * マイルストーンNの段階1では `ChaseLooseBall` のみが実際にこの機構で管理され、
+ * それ以外は将来の段階向けの予約値（現状は割り当てられない）。
+ */
+export type PlayerIntentType =
+  | "Idle"
+  | "Support"
+  | "BackSupport"
+  | "LateralSupport"
+  | "WaitOnside"
+  | "RunBehind"
+  | "Press"
+  | "Cover"
+  | "ChaseLooseBall";
+
+export interface PlayerIntent {
+  type: PlayerIntentType;
+  /** この意図に切り替わった `GameState.turn`。 */
+  startedAtTurn: number;
+  /** この意図に切り替わってから、最低限維持するターン数（段階1では未使用。将来の段階向け）。 */
+  minDurationTurns: number;
+  /** この意図に切り替わってから、これを超えたターン数が経過したら強制的に再判断する。 */
+  maxDurationTurns: number;
+}
+
+/**
+ * `decideAction` に渡す任意コールバック。選手の `intent.type` が切り替わるたびに呼ばれる
+ * （`specification/選手思考の状態遷移を検討.md` 「第5段階：状態遷移ログを出す」）。
+ * `game` 層は `types` 以外に依存しないため、`simulation/logger.ts` の `Logger` 型を
+ * 直接参照せず、この関数型を経由して疎結合にする（`Simulator` 側で `Logger` に橋渡しする）。
+ */
+export type IntentChangeCallback = (playerId: string, from: PlayerIntentType, to: PlayerIntentType) => void;
+
 export interface PlayerParams {
   /** カルチョビット「スピード」相当。 */
   speed: number;
@@ -48,6 +82,7 @@ export interface Player {
   pos: Vec2;
   vel: Vec2;
   state: PlayerActionState;
+  intent: PlayerIntent;
   /**
    * タックルで奪われた直後（旧保持者）、またはタックルに失敗してかわされた直後（守備者）に
    * 残っている「怯み」ターン数。0より大きい間は decideAction が通常の意思決定をスキップし
@@ -360,6 +395,22 @@ export interface GameConfig {
        * さらなる改善（自然なオフサイド率20%未満が目安）が前提のため、一旦 false のまま。
        */
       enforcementEnabled: boolean;
+      /**
+       * マイルストーンN-3: `WaitOnside`/`RunBehind` intent（オフサイドライン付近で
+       * 「待つ」と「抜ける」を明示的に分ける状態遷移）を有効にするか。avoidanceEnabled/
+       * enforcementEnabled とは独立に切り替えられ、単独でbalance-check評価できるようにする
+       * （設計: specification/features_intent_state_machine.md）。
+       */
+      stateBasedWaitEnabled: boolean;
+      /**
+       * `WaitOnside`/`RunBehind` intentの対象とする選手を、オフサイドラインとの
+       * y座標差[m]がこの値未満かどうかで動的に絞り込む（役割固定ではなく実位置判定。
+       * `isLastManBack` と対称的な方針）。1人に限定しない — 3対3では前線に複数人が
+       * 同時に並ぶ局面が普通にあるため。
+       */
+      frontLineProximityMeters: number;
+      /** `WaitOnside` 中、オフサイドラインからどれだけ手前（自ゴール側）で待機するか [m]。 */
+      waitOnsideMarginMeters: number;
       /** 同一ラインとみなす許容誤差 [m]。 */
       lineToleranceMeters: number;
       /**
@@ -402,6 +453,44 @@ export interface GameConfig {
          */
         markingWeight: number;
       };
+    };
+    /** 意図（PlayerIntent）ベース状態遷移（マイルストーンN）関連の設定。 */
+    intent: {
+      /**
+       * ChaseLooseBall 意図に切り替わってから、これを超えたターン数が経過したら
+       * （ボールに追いつけていなくても）強制的に再判断する。フリーボールを延々
+       * 追い続けて他の判断（受け手ポジションへ戻る等）に切り替われなくなるのを防ぐ。
+       */
+      chaseLooseBallMaxDurationTurns: number;
+      /**
+       * Support/BackSupport/LateralSupport 意図を維持する最低ターン数（マイルストーンN-2）。
+       * 現状はこの3種別間の切り替えを抑制する割り込み条件がまだ無いため実質未使用だが、
+       * 将来の割り込み（例: PassLaneClosed）追加時にそのまま効くよう型としては持たせておく。
+       */
+      supportMinDurationTurns: number;
+      /** Support/BackSupport/LateralSupport 意図を、これを超えたターン数経過で強制的に再判断する。 */
+      supportMaxDurationTurns: number;
+      /** WaitOnside 意図を維持する最低ターン数（マイルストーンN-3。canRunBehind判定のチラつき防止）。 */
+      waitOnsideMinDurationTurns: number;
+      /** WaitOnside 意図を、これを超えたターン数経過で強制的に再判断する。 */
+      waitOnsideMaxDurationTurns: number;
+      /** RunBehind 意図を維持する最低ターン数（短めに設定し、抜けた後は素早く次の判断に戻す）。 */
+      runBehindMinDurationTurns: number;
+      /** RunBehind 意図を、これを超えたターン数経過で強制的に再判断する。 */
+      runBehindMaxDurationTurns: number;
+      /** Cover 意図（守備の基本ポジショニング）を維持する最低ターン数（マイルストーンN-4）。 */
+      coverMinDurationTurns: number;
+      /** Cover 意図を、これを超えたターン数経過で強制的に再判断する。 */
+      coverMaxDurationTurns: number;
+      /**
+       * Press 意図を維持する最低ターン数。以前は毎ターン独立に `pressChance` を振り直して
+       * いたため、詰め寄るかどうかがターンごとに反転しうった。intent化により、一度
+       * 詰め寄ると決めたら短時間コミットする（ただしdCarrierがpressDistanceを超えたら
+       * 毎ターンのブレンド自体は自動的に効かなくなる）。
+       */
+      pressMinDurationTurns: number;
+      /** Press 意図を、これを超えたターン数経過で強制的に再判断する。 */
+      pressMaxDurationTurns: number;
     };
   };
   team: {

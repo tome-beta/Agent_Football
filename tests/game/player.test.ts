@@ -385,6 +385,13 @@ describe("decideAction: non-possessor", () => {
   it("caps the receiving-position forward reach by remaining distance to goal (positioning redesign method A)", () => {
     const config = loadConfig({ random: { seed: 1 } });
     config.ai.offside.avoidanceEnabled = true; // デフォルトは無効化しているため個別テストで有効化する
+    // マイルストーンN-2: Support/BackSupport/LateralSupportの選択はintentとして
+    // 複数ターン固定される。ここではSupport（forwardReachFractionが効く経路）だけを
+    // 検証したいので、他2種別が選ばれないよう確率を0にする。
+    config.ai.positioning.backSupportChanceBase = 0;
+    config.ai.positioning.backSupportMentalSpread = 0;
+    config.ai.positioning.lateralSupportChanceBase = 0;
+    config.ai.positioning.lateralSupportVisionSpread = 0;
 
     function settledSupporterY(forwardReachFraction: number): number {
       config.ai.offside.forwardReachFraction = forwardReachFraction;
@@ -420,6 +427,13 @@ describe("decideAction: non-possessor", () => {
     config.ai.offside.avoidanceEnabled = true; // デフォルトは無効化しているため個別テストで有効化する
     config.ai.positioning.markerAvoidRangeFactor = 0; // マーカー回避を無効化し、方式Cの効果だけを見る
     config.ai.offside.forwardReachFraction = 1; // 方式Aの上限が効かないようにする
+    // マイルストーンN-2: Support/BackSupport/LateralSupportの選択はintentとして
+    // 複数ターン固定される。ここではSupport（方式Cの到達時間比較が効く経路）だけを
+    // 検証したいので、他2種別が選ばれないよう確率を0にする。
+    config.ai.positioning.backSupportChanceBase = 0;
+    config.ai.positioning.backSupportMentalSpread = 0;
+    config.ai.positioning.lateralSupportChanceBase = 0;
+    config.ai.positioning.lateralSupportVisionSpread = 0;
 
     function settledSupporterY(defenderPos: { x: number; y: number }): number {
       const state = createInitialState(config);
@@ -467,6 +481,194 @@ describe("decideAction: non-possessor", () => {
     expect(far.state).toBe("MovingToSpace");
     // チームAの攻撃方向は+y。定位置のままなら vel はほぼ0のはず。
     expect(far.vel.y).toBeGreaterThan(0);
+  });
+
+  it("keeps ChaseLooseBall intent once committed even if another teammate briefly becomes nearer", () => {
+    // マイルストーンN-1の回帰テスト: 最寄り判定を毎ターン素で振り直すと、拮抗した2人の
+    // 間で「追う選手」がターンごとに入れ替わりうる（フラフラの一因）。intent化により、
+    // 一度 ChaseLooseBall にコミットした選手は、ボールに追いつくか
+    // chaseLooseBallMaxDurationTurns を超えるまで役割を保持し続けるべき。
+    const config = loadConfig({ random: { seed: 1 } });
+    const state = createInitialState(config);
+    const chaser = state.teams.A.players.find((p) => p.role === "FW")!;
+    const rival = state.teams.A.players.find((p) => p.role === "MF")!;
+
+    state.ball.pos = { x: chaser.pos.x + 1, y: chaser.pos.y };
+    state.ball.status = "Free";
+    state.ball.possessorId = null;
+
+    decideAction(chaser, state, config);
+    expect(chaser.intent.type).toBe("ChaseLooseBall");
+
+    // 次のターン、ライバルの方がボールにわずかに近くなっても、コミット済みのchaserは
+    // 引き続きChaseLooseBallのままであるべき（ボールへ追いつく/期限切れまで）。
+    rival.pos = { x: state.ball.pos.x + 0.01, y: state.ball.pos.y };
+    state.turn += 1;
+
+    decideAction(chaser, state, config);
+    expect(chaser.intent.type).toBe("ChaseLooseBall");
+    expect(chaser.state).toBe("BallTracking");
+  });
+
+  it("keeps a chosen Support/BackSupport/LateralSupport intent until supportMaxDurationTurns even if the choice would change", () => {
+    // マイルストーンN-2の回帰テスト: 意図の「種別」だけを固定し、目標地点は毎ターン
+    // 再計算する設計（specification/features_intent_state_machine.md）。ここでは種別が
+    // supportMaxDurationTurns経過まで保持されることを確認する。
+    const config = loadConfig({ random: { seed: 1 } });
+    const state = createInitialState(config);
+    const supporter = state.teams.A.players.find((p) => p.role === "MF")!;
+    const carrier = state.teams.A.players.find((p) => p.role === "FW")!;
+
+    state.ball.pos = { x: 0, y: 0 };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = carrier.id;
+    supporter.pos = { x: 5, y: -5 };
+
+    // 最初の選択でBackSupportを確実に選ばせる。
+    config.ai.positioning.backSupportChanceBase = 1;
+    decideAction(supporter, state, config);
+    expect(supporter.intent.type).toBe("BackSupport");
+
+    // 以後は確率を0に変えても、supportMaxDurationTurns経過前は同じ意図を保持するはず。
+    config.ai.positioning.backSupportChanceBase = 0;
+    for (let i = 0; i < config.ai.intent.supportMaxDurationTurns - 1; i++) {
+      state.turn += 1;
+      decideAction(supporter, state, config);
+      expect(supporter.intent.type).toBe("BackSupport");
+    }
+
+    // supportMaxDurationTurns経過後は再判断され、確率0のBackSupportはもう選ばれない。
+    state.turn += 1;
+    decideAction(supporter, state, config);
+    expect(supporter.intent.type).not.toBe("BackSupport");
+  });
+
+  it("chooses WaitOnside near the offside line when marked closely (stateBasedWaitEnabled)", () => {
+    // マイルストーンN-3: canRunBehindの条件（前を向いている/オンサイド/マーク圧力が低い）の
+    // うちマーク圧力が高い（=lowPressureがfalse）場合はWaitOnsideを選ぶはず。
+    const config = loadConfig({ random: { seed: 1 } });
+    config.ai.offside.stateBasedWaitEnabled = true;
+    const state = createInitialState(config);
+    const supporter = state.teams.A.players.find((p) => p.role === "MF")!;
+    const carrier = state.teams.A.players.find((p) => p.role === "FW")!;
+
+    state.ball.pos = { x: 0, y: 10 };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = carrier.id;
+    carrier.vel = { x: 0, y: 0 };
+    supporter.pos = { x: 0, y: 18 };
+
+    // 最終ラインを作るB選手 + supporterのすぐ近くでマークするB選手。
+    state.teams.B.players[0].pos = { x: 0, y: 20 };
+    state.teams.B.players[1].pos = { x: 0.1, y: 18 };
+    state.teams.B.players[2].pos = { x: 1000, y: -1000 };
+
+    decideAction(supporter, state, config);
+
+    expect(supporter.intent.type).toBe("WaitOnside");
+  });
+
+  it("chooses RunBehind near the offside line when onside and unmarked (stateBasedWaitEnabled)", () => {
+    const config = loadConfig({ random: { seed: 1 } });
+    config.ai.offside.stateBasedWaitEnabled = true;
+    const state = createInitialState(config);
+    const supporter = state.teams.A.players.find((p) => p.role === "MF")!;
+    const carrier = state.teams.A.players.find((p) => p.role === "FW")!;
+
+    state.ball.pos = { x: 0, y: 10 };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = carrier.id;
+    carrier.vel = { x: 0, y: 0 };
+    supporter.pos = { x: 0, y: 18 };
+
+    // 最終ラインを作るB選手2人は、supporterから十分離す（マーク圧力なし）。
+    state.teams.B.players[0].pos = { x: 5, y: 25 };
+    state.teams.B.players[1].pos = { x: -5, y: 25 };
+    state.teams.B.players[2].pos = { x: 1000, y: -1000 };
+
+    decideAction(supporter, state, config);
+
+    expect(supporter.intent.type).toBe("RunBehind");
+  });
+
+  it("never chooses WaitOnside/RunBehind when stateBasedWaitEnabled is false (default)", () => {
+    // デフォルト無効時は既存のSupport/BackSupport/LateralSupport選択のみに留まるべき。
+    const config = loadConfig({ random: { seed: 1 } });
+    expect(config.ai.offside.stateBasedWaitEnabled).toBe(false);
+    const state = createInitialState(config);
+    const supporter = state.teams.A.players.find((p) => p.role === "MF")!;
+    const carrier = state.teams.A.players.find((p) => p.role === "FW")!;
+
+    state.ball.pos = { x: 0, y: 10 };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = carrier.id;
+    carrier.vel = { x: 0, y: 0 };
+    supporter.pos = { x: 0, y: 18 };
+    state.teams.B.players[0].pos = { x: 5, y: 25 };
+    state.teams.B.players[1].pos = { x: -5, y: 25 };
+    state.teams.B.players[2].pos = { x: 1000, y: -1000 };
+
+    decideAction(supporter, state, config);
+
+    expect(["Support", "BackSupport", "LateralSupport"]).toContain(supporter.intent.type);
+  });
+
+  it("keeps a chosen Press intent until pressMaxDurationTurns even if the choice would change", () => {
+    // マイルストーンN-4の回帰テスト: 以前はpressChanceを毎ターン独立に振り直していたため、
+    // 詰め寄るかどうかがターンごとに反転しうった。intent化により、一度Pressを選んだら
+    // pressMaxDurationTurns経過まで同じ意図を保持するはず。
+    const config = loadConfig({ random: { seed: 1 } });
+    const state = createInitialState(config);
+    const defender = state.teams.A.players.find((p) => p.role === "DF")!;
+    const carrier = state.teams.B.players.find((p) => p.role === "FW")!;
+
+    state.ball.pos = { ...carrier.pos };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = carrier.id;
+    defender.pos = { x: carrier.pos.x + 2, y: carrier.pos.y };
+
+    // 最初の選択でPressを確実に選ばせる。
+    config.ai.positioning.pressChanceBase = 1;
+    config.ai.positioning.lastManPressSuppression = 1;
+    decideAction(defender, state, config);
+    expect(defender.intent.type).toBe("Press");
+
+    // 以後は確率を0に変えても、pressMaxDurationTurns経過前は同じ意図を保持するはず。
+    config.ai.positioning.pressChanceBase = 0;
+    for (let i = 0; i < config.ai.intent.pressMaxDurationTurns - 1; i++) {
+      state.turn += 1;
+      decideAction(defender, state, config);
+      expect(defender.intent.type).toBe("Press");
+    }
+
+    // pressMaxDurationTurns経過後は再判断され、確率0のPressはもう選ばれない。
+    state.turn += 1;
+    decideAction(defender, state, config);
+    expect(defender.intent.type).not.toBe("Press");
+  });
+
+  it("calls onIntentChange only when intent.type actually switches", () => {
+    // 状態遷移ログ（specification/選手思考の状態遷移を検討.md 第5段階）用のコールバック。
+    // intentが実際に切り替わったときだけ呼ばれ、同じ種別を維持している間は呼ばれないはず。
+    const config = loadConfig({ random: { seed: 1 } });
+    const state = createInitialState(config);
+    const chaser = state.teams.A.players.find((p) => p.role === "FW")!;
+
+    state.ball.pos = { x: chaser.pos.x + 1, y: chaser.pos.y };
+    state.ball.status = "Free";
+    state.ball.possessorId = null;
+
+    const changes: Array<{ playerId: string; from: string; to: string }> = [];
+    const onIntentChange = (playerId: string, from: string, to: string) => changes.push({ playerId, from, to });
+
+    decideAction(chaser, state, config, onIntentChange);
+    expect(changes).toEqual([{ playerId: chaser.id, from: "Idle", to: "ChaseLooseBall" }]);
+
+    // 同じターン内で意図が変わらない限り、以後は呼ばれないはず。
+    changes.length = 0;
+    state.turn += 1;
+    decideAction(chaser, state, config, onIntentChange);
+    expect(changes).toEqual([]);
   });
 });
 
