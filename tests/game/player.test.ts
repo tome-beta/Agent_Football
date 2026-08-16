@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { createInitialState } from "../../src/game/match";
 import { decideAction, stepPlayer } from "../../src/game/player";
 import { loadConfig } from "../../src/simulation/config";
-import type { GameState } from "../../src/types";
+import type { GameConfig, GameState } from "../../src/types";
 
 function stateWithSeed(seed: number): GameState {
   const config = loadConfig({ random: { seed } });
@@ -621,6 +621,56 @@ describe("decideAction: positioning force composition (milestone H)", () => {
     decideAction(defender, state, config);
 
     // crowder は defender の +x 側にいるので、反発力は -x 方向に働くはず。
+    expect(defender.vel.x).toBeLessThan(0);
+  });
+
+  it("does not repel when the personalized minSpacing collapses to 0 for a low-mental player", () => {
+    // minSpacingMentalSpreadを極端に大きくし、mental=0のdefenderの実効minSpacingを0に
+    // クランプさせる。この状態ではcrowderがどれだけ近くても反発は起きないはず。
+    const config = loadConfig({
+      random: { seed: 1 },
+      ai: { positioning: { minSpacingMentalSpread: 20 } } as GameConfig["ai"],
+    });
+    const state = createInitialState(config);
+    const defender = state.teams.A.players.find((p) => p.role === "DF")!;
+    const crowder = state.teams.A.players.find((p) => p.role === "MF")!;
+    const opponent = state.teams.B.players.find((p) => p.role === "FW")!;
+
+    defender.params = { ...defender.params, mental: 0 };
+    defender.pos = { x: 0, y: -30 };
+    crowder.pos = { x: 0.5, y: -30 };
+    opponent.pos = { x: 0, y: 1000 };
+    state.ball.pos = { ...opponent.pos };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = opponent.id;
+
+    decideAction(defender, state, config);
+
+    expect(defender.vel.x).toBe(0);
+  });
+
+  it("repels at a distance beyond the base minSpacing for a high-mental player", () => {
+    // minSpacingMentalSpreadを極端に大きくし、mental=1のdefenderの実効minSpacingを
+    // base(6m)よりはるかに広げる。crowderをbase minSpacingの外(8m)に置いても反発するはず。
+    const config = loadConfig({
+      random: { seed: 1 },
+      ai: { positioning: { minSpacingMentalSpread: 20 } } as GameConfig["ai"],
+    });
+    const state = createInitialState(config);
+    const defender = state.teams.A.players.find((p) => p.role === "DF")!;
+    const crowder = state.teams.A.players.find((p) => p.role === "MF")!;
+    const opponent = state.teams.B.players.find((p) => p.role === "FW")!;
+
+    defender.params = { ...defender.params, mental: 1 };
+    defender.pos = { x: 0, y: -30 };
+    crowder.pos = { x: 8, y: -30 }; // config.ai.positioning.minSpacing(6m)より遠い
+    opponent.pos = { x: 0, y: 1000 };
+    state.ball.pos = { ...opponent.pos };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = opponent.id;
+
+    decideAction(defender, state, config);
+
     expect(defender.vel.x).toBeLessThan(0);
   });
 

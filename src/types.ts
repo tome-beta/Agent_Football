@@ -293,6 +293,12 @@ export interface GameConfig {
       repulsionWeight: number;
       /** この距離未満に味方がいると反発が働く [m]。 */
       minSpacing: number;
+      /**
+       * mental の偏差1あたり minSpacing をどれだけ振るか（高いほど広い間隔を要求する）。
+       * 固定値のままだと全選手が同じ間隔を保とうとして正三角形に近い均等配置に収束して
+       * 見える問題への対策（ユーザー指摘、2026-08-16。receivingDistanceMentalSpread と同じ狙い）。
+       */
+      minSpacingMentalSpread: number;
       /** ボール-自ゴール間の線上に吸着する強さ（0〜1のブレンド率）。 */
       coverWeight: number;
       /** 敵ボール保持者へ詰め寄る強さ（0〜1のブレンド率。mental と掛け合わせる）。 */

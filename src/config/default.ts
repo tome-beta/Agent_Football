@@ -67,6 +67,9 @@ export const defaultConfig: GameConfig = {
       ballPullWeight: 0.5, // home からの追従上限 = distance(home, ownGoal) * この係数
       repulsionWeight: 4, // 味方が近すぎるときに離れる力の強さ [m]
       minSpacing: 6, // この距離未満で反発が働く [m]
+      // balance-checkで0/1/2/3を比較予定の暫定値。mental差1(0〜1レンジ)あたりminSpacingを
+      // どれだけ振るか。2なら差0.45(既定パラメータの実質最大差)でminSpacing 6±0.9m程度になる。
+      minSpacingMentalSpread: 2,
       // coverWeight/pressWeight/pressDistance はマイルストーンGの調整で引き上げた。
       // 元の値（0.6/0.8/12）だと守備が間に合わず、キックオフ〜ゴールのサイクルがほぼ
       // 確実に攻撃側の得点で終わり、先にキックオフするチームが全勝する結果になっていた
