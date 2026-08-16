@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { Simulator } from "../../src/simulation/simulator";
 import { loadConfig } from "../../src/simulation/config";
 import { NullRenderer } from "../../src/renderer/nullRenderer";
+import { distance } from "../../src/game/utils";
 import type { Logger } from "../../src/simulation/logger";
 import type { GameState, ScoreLogEntry } from "../../src/types";
 
@@ -69,6 +70,22 @@ describe("Simulator.run", () => {
       }
       expect(Number.isFinite(sim.state.ball.pos.x)).toBe(true);
       expect(Number.isFinite(sim.state.ball.pos.y)).toBe(true);
+    }
+  });
+
+  it("never lets two players overlap beyond the collision radius", () => {
+    const config = fastConfig();
+    const sim = new Simulator(config, new NullRenderer());
+    const minDist = config.player.radius * 2;
+
+    while (sim.state.phase !== "MATCH_END") {
+      sim.step();
+      const players = [...sim.state.teams.A.players, ...sim.state.teams.B.players];
+      for (let i = 0; i < players.length; i++) {
+        for (let j = i + 1; j < players.length; j++) {
+          expect(distance(players[i].pos, players[j].pos)).toBeGreaterThanOrEqual(minDist - 1e-3);
+        }
+      }
     }
   });
 

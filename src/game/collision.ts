@@ -1,5 +1,5 @@
 import type { Player, Ball, GameConfig, Vec2 } from "../types";
-import { distance, distanceToSegment, length } from "./utils";
+import { add, distance, distanceToSegment, length, scale, sub } from "./utils";
 import { chance } from "./random";
 import type { RngHolder } from "./random";
 
@@ -195,12 +195,62 @@ function nearestPlayer(candidates: Player[], ball: Ball): Player | undefined {
 }
 
 /**
- * 選手同士の衝突（features_2 §4.4）。
+ * 押し出し量のうち a 側が負担する比率（0〜1）。b 側は `1 - この値`。
  *
- * **第一ステップでは意図的に何もしない。** 3対3の小規模では選手が重なることを
- * 許容したほうが AI の移動判定が単純になるため、仕様で「衝突判定なし・通り抜け」と
- * 決めている。第二ステップで速度低下や押し出しを入れる余地としてこの関数を残す。
+ * `physical`（カルチョビット「フィジカル」相当＝あたりの強さ）が高いほど自分の
+ * 移動量が減り、相手を多く押し出す。役割分岐ではなく physical の値そのものが
+ * 配分比の差になる（[[feedback_param_driven_behavior]]）。差が極端でも一方が
+ * 完全に動かなくなる（ロックする）ことがないよう `minPushRatio`〜`1-minPushRatio`
+ * の範囲にクランプする。
  */
-export function resolvePlayerPlayer(_a: Player, _b: Player, _config: GameConfig): void {
-  // 意図的に no-op。
+function collisionPushRatio(a: Player, b: Player, config: GameConfig): number {
+  const { physicalSpread, minPushRatio } = config.ai.collision;
+  const raw = 0.5 + (b.params.physical - a.params.physical) * physicalSpread;
+  return Math.max(minPushRatio, Math.min(1 - minPushRatio, raw));
+}
+
+/**
+ * 選手2人が半径分（`config.player.radius * 2`）重なっていたら、重なり量を
+ * physical（あたりの強さ）に応じた比率で押し戻して分離する（features_2 §4.4 第二ステップ）。
+ *
+ * vel には触れない位置補正のみの実装。速度ベースの反発力にすると、moveToward の
+ * 到達減速（震え対策、`player.ts` 参照）と同様の「押し出し→AIが押し戻す→また押し出し」
+ * という振動を再現しかねないため、AIの意思決定ロジックに一切干渉しない形にとどめる。
+ * 押し出された pos は次ターンの moveToward がそのまま起点にするので、vel は自然に追従する。
+ *
+ * 中心が完全に一致する縮退ケースでは方向が定まらないため、id の文字列比較で
+ * 決定的に軸を割り振る（乱数を使わず再現性を保つ）。
+ */
+export function resolvePlayerPlayer(a: Player, b: Player, config: GameConfig): void {
+  const minDist = config.player.radius * 2;
+  const delta = sub(b.pos, a.pos);
+  const dist = length(delta);
+
+  if (dist >= minDist) return;
+
+  const normal = dist < 1e-9 ? { x: a.id < b.id ? -1 : 1, y: 0 } : scale(delta, 1 / dist);
+  const overlap = minDist - dist;
+  const ratioA = collisionPushRatio(a, b, config);
+
+  a.pos = sub(a.pos, scale(normal, overlap * ratioA));
+  b.pos = add(b.pos, scale(normal, overlap * (1 - ratioA)));
+}
+
+/**
+ * 全選手ペアについて `resolvePlayerPlayer` を適用する。毎ターン1回、選手の移動後
+ * （`stepPlayer` の後、ボールの保持者判定の前）に呼ぶ想定。
+ *
+ * 3人以上が同時に重なると1回のパスでは解決しきれないことがあるため、
+ * 小規模（3対3・最大6人）なコストで数回リラクゼーションする。
+ */
+const COLLISION_RELAXATION_ITERATIONS = 10;
+
+export function resolveAllPlayerCollisions(players: Player[], config: GameConfig): void {
+  for (let iter = 0; iter < COLLISION_RELAXATION_ITERATIONS; iter++) {
+    for (let i = 0; i < players.length; i++) {
+      for (let j = i + 1; j < players.length; j++) {
+        resolvePlayerPlayer(players[i], players[j], config);
+      }
+    }
+  }
 }

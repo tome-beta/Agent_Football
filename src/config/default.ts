@@ -82,6 +82,7 @@ export const defaultConfig: GameConfig = {
       goalMouthSpreadDistance: 3, // 危険ゾーン内でhome.xの符号方向へずらす最大距離[m]（goalWidth 7.32の半分弱）
       goalRecallWeight: 0.6, // 危険ゾーン内でtarget.yをown.yへ直接引き寄せる強さ（dangerと掛け合わせる）
       receivingDistanceFactor: 0.6, // 受け手ポジションの距離 = passDistance * この係数
+      receivingDistanceMentalSpread: 0.15, // mentalの偏差1あたりreceivingDistanceFactorをどれだけ振るか（高いほど遠くへ飛び出す）
       markerAvoidRangeFactor: 0.5, // マーカー回避判定の範囲 = passDistance * この係数
       markerAvoidStepDistance: 3, // マーカー回避時に横へずれる距離 [m]
       // 0/0.05/0.1/0.15/0.2/0.3/0.5 を20試合ずつ比較（balance-check、2026-08-08）。
@@ -92,9 +93,11 @@ export const defaultConfig: GameConfig = {
       backSupportChanceBase: 0.15, // mental=0.5の選手が毎ターンバックサポートを選ぶ基準確率
       backSupportMentalSpread: 0.5, // mentalの偏差1あたりの確率変化幅（低いほど後方支援に回りやすい）
       backSupportDistanceFactor: 0.5, // バックサポート位置の距離 = passDistance * この係数
+      backSupportDistanceMentalSpread: 0.15, // mentalの偏差1あたりbackSupportDistanceFactorをどれだけ振るか（低いほど深く下がる）
       lateralSupportChanceBase: 0.25, // vision=90度の選手が毎ターン横サポートを選ぶ基準確率
       lateralSupportVisionSpread: 0.5, // visionの偏差1あたりの確率変化幅（広いほど選びやすい）
       lateralSupportDistanceFactor: 0.6, // 横サポート位置の距離 = passDistance * この係数
+      lateralSupportDistanceVisionSpread: 0.15, // visionの偏差1あたりlateralSupportDistanceFactorをどれだけ振るか（広いほど大きく開く）
     },
     offside: {
       // ステップ1（AI回避）を有効化すると selectPassReceiver/computeTargetPosition
@@ -135,6 +138,15 @@ export const defaultConfig: GameConfig = {
         arrivalDeficitWeight: 1, // 到達時間の遅れ1秒あたりのペナルティ（computeTargetPositionのみ）
         markingWeight: 1, // マーク（敵接近）1mあたりのペナルティ
       },
+    },
+    collision: {
+      // physical差1（0〜1レンジ、例: DF 0.7 vs FW 0.6 の差0.1）あたり配分比を0.5から
+      // どれだけ振るか。0.3なら差0.1で0.53/0.47、差0.5(理論上の最大)で0.65/0.35程度の
+      // 緩やかな差になる。役割分岐ではなくphysicalの値そのものが効くようにする狙い。
+      physicalSpread: 0.3,
+      // 配分比を[0.15, 0.85]に収める。physical差が理論上の最大でも一方が動かなくなる
+      // （ロックする）ことがないようにする安全マージン。
+      minPushRatio: 0.15,
     },
     intent: {
       // フリーボールを最寄りとして追い始めてから、追いつけなくても強制的に再判断する

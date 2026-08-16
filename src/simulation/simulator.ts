@@ -1,6 +1,14 @@
 import type { GameConfig, GameState, Player, Renderer } from "../types";
 import type { Logger } from "./logger";
-import { createInitialState, stepMatch, decideAction, stepPlayer, stepBall, resolveBallPossession } from "../game";
+import {
+  createInitialState,
+  stepMatch,
+  decideAction,
+  stepPlayer,
+  stepBall,
+  resolveBallPossession,
+  resolveAllPlayerCollisions,
+} from "../game";
 
 /** AI・ボール物理を動かすフェーズ。得点直後や再開待ちの間は選手・ボールを止めておく。 */
 const ACTIVE_PHASES: GameState["phase"][] = ["KICKOFF", "PLAYING"];
@@ -24,8 +32,9 @@ export class Simulator {
 
   /**
    * 1ターン分の処理（features_3 §13）:
-   *   1. AI判定（decideAction） 2. 選手移動（stepPlayer） 3. ボール更新（stepBall）
-   *   4. 当たり判定（resolveBallPossession） 5. 状態更新（stepMatch） 6. 描画
+   *   1. AI判定（decideAction） 2. 選手移動（stepPlayer） 3. 選手同士の衝突解決
+   *      （resolveAllPlayerCollisions） 4. ボール更新（stepBall） 5. 当たり判定
+   *      （resolveBallPossession） 6. 状態更新（stepMatch） 7. 描画
    *
    * KICKOFF/PLAYING 以外（GOAL_SCORED/RESTART_SETUP/HALF_TIME）は選手・ボールを止め、
    * `stepMatch` によるフェーズ進行のみ行う。
@@ -44,6 +53,7 @@ export class Simulator {
         : undefined;
       for (const player of players) decideAction(player, state, config, onIntentChange);
       for (const player of players) stepPlayer(player, config);
+      resolveAllPlayerCollisions(players, config);
       const prevBallPos = { ...state.ball.pos };
       stepBall(state.ball, config);
       resolveBallPossession(players, state.ball, config, prevBallPos, state);

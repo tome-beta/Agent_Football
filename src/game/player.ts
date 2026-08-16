@@ -486,7 +486,13 @@ function computeBackSupportTarget(
 ): Vec2 {
   const p = config.ai.positioning;
   const towardOwnGoalDir = normalize(sub(own, ballPos));
-  const backDistance = config.ai.passDistance * p.backSupportDistanceFactor;
+  // receivingDistanceFactor同様、mentalの偏差で距離をばらつかせる。低いほど深く下がりたがる
+  // （backSupportChanceBaseと同じ向き）。
+  const backSupportDistanceFactor = Math.max(
+    0,
+    p.backSupportDistanceFactor - (player.params.mental - 0.5) * p.backSupportDistanceMentalSpread
+  );
+  const backDistance = config.ai.passDistance * backSupportDistanceFactor;
   const base = length(towardOwnGoalDir) < 1e-6 ? home : add(ballPos, scale(towardOwnGoalDir, backDistance));
 
   const openSpot = applyMarkerAvoidance(base, oppTeam, config);
@@ -504,7 +510,12 @@ function computeBackSupportTarget(
  */
 function computeLateralSupportTarget(player: Player, home: Vec2, ballPos: Vec2, oppTeam: Team, config: GameConfig): Vec2 {
   const p = config.ai.positioning;
-  const lateralDistance = config.ai.passDistance * p.lateralSupportDistanceFactor;
+  // lateralSupportChanceBaseと同じくvisionで距離をばらつかせる。広いほど大きく開く。
+  const lateralSupportDistanceFactor = Math.max(
+    0,
+    p.lateralSupportDistanceFactor + (player.params.vision / 180 - 0.5) * p.lateralSupportDistanceVisionSpread
+  );
+  const lateralDistance = config.ai.passDistance * lateralSupportDistanceFactor;
   const awaySign = Math.abs(home.x) > 1e-6 ? -Math.sign(home.x) : Math.sign(ballPos.x) > 0 ? -1 : 1;
   const base = { x: ballPos.x + awaySign * lateralDistance, y: ballPos.y };
 
@@ -774,7 +785,14 @@ function computeSupportIntentTarget(
 
   const goal = attackGoal(player.team, config);
   const towardGoalDir = normalize(sub(goal, ball.pos));
-  let receivingDistance = config.ai.passDistance * p.receivingDistanceFactor;
+  // 固定係数のままだと全選手がボールから常に同じ距離を取り、「同じ辺の長さの三角形」を
+  // 維持しているように見えてしまう（ユーザー指摘、2026-08-14）。mentalが高いほど遠くへ
+  // 飛び出したがる、という個性の差をそのまま距離のばらつきにする。
+  const receivingDistanceFactor = Math.max(
+    0,
+    p.receivingDistanceFactor + (player.params.mental - 0.5) * p.receivingDistanceMentalSpread
+  );
+  let receivingDistance = config.ai.passDistance * receivingDistanceFactor;
   // 受け手ポジションの前進距離を「ボールからゴールまでの残り距離」の一定割合でも頭打ちにする
   // （方式A: features_positioning_redesign.md）。相手の実位置を一切参照しないため、相手の
   // 守備ポジショニングと相互に反応し合うフィードバックループが構造的に発生しない。
