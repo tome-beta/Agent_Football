@@ -103,41 +103,40 @@ export const defaultConfig: GameConfig = {
       lateralSupportDistanceVisionSpread: 0.15, // visionの偏差1あたりlateralSupportDistanceFactorをどれだけ振るか（広いほど大きく開く）
     },
     offside: {
-      // ステップ1（AI回避）を有効化すると selectPassReceiver/computeTargetPosition
-      // 両方が方式Eスコアリングに切り替わる。露骨にオフサイドの選手へパスを出す見た目の
-      // 不自然さ（ユーザー指摘、2026-08-08）を直す狙いで avoidanceEnabled=true を試したが、
-      // computeTargetPosition側（受け手の位置取り）が絡むと前進そのものが止まり、
-      // 10シードのbalance-checkで平均得点0.00（全試合0-0）という致命的な崩壊を確認した
-      // （forwardReachFraction を外しても症状は変わらず、既知の「自然なオフサイド率
-      // 59〜68%」問題より深刻）。selectPassReceiverの受け手選定だけを直す軽量な対策が
-      // 別途必要なため、一旦 false に戻す。詳細は 2026-08-08 のやり取り参照。
-      avoidanceEnabled: false,
-      // ステップ2（反則としてのターンオーバー処理、Ball.offsideOffenderId/handleOffside）を
-      // 2026-08-05 に実装したが、方式A・C導入後も自然なオフサイド率が59%と高いままのため、
-      // 20シードのbalance-checkで平均得点が導入前の約4.6点/試合→0.45点/試合まで急落する
-      // 再現性のある破滅的偏りを確認した（マイルストーンJ・2026-08-03の再現）。バックパス・
-      // 保持クールダウン追加後の2026-08-08再検証でも15試合で総得点0まで悪化することを確認。
-      // 再挑戦には受け手ポジショニングのさらなる改善（方式D等、自然なオフサイド率20%未満が
-      // 目安）が前提。詳細: specification/features_offside.md
+      // ステップ1（AI回避）。過去（2026-08-08）に avoidanceEnabled=true が平均得点0.00まで
+      // 崩壊した原因は、scoreReceivingSpot の overshoot（オフサイドライン超過量）が
+      // メートル単位の非正規化値のまま advanced（0〜1の無次元値）と加減算されていたバグ
+      // だったと判明（デバッグ調査、2026-08-16）。forwardReachFraction=0.3 で前進報酬の
+      // 上限が0.3程度に抑えられている状態でメートル単位のペナルティを足すと、重み0.25程度
+      // でもすぐ前進報酬を消し飛ばし、崩壊が起きていた。overshoot を remaining（ボールから
+      // ゴールまでの残り距離）で正規化し advanced と同じ無次元スケールに揃えたところ、
+      // 崩壊は「非線形の崖」から「滑らかなトレードオフ」に変わった。forwardReachFraction=0.7・
+      // offsideOvershootWeight=0.5（正規化後の値）の組み合わせで20シードのbalance-check
+      // 平均得点5.10（無効時6.05に近い）まで回復したため、ステップ1を正式に有効化する。
+      avoidanceEnabled: true,
+      // ステップ2（反則としてのターンオーバー処理、Ball.offsideOffenderId/handleOffside）は
+      // 引き続き無効。上記の正規化後もavoidanceEnabled+enforcementEnabledを両方有効にすると
+      // 実行されたパスの過半数が依然オフサイドと判定され、平均得点が2.55まで下がることを
+      // 確認済み（2026-08-16）。反則化には受け手ポジショニングのさらなる改善が必要。
+      // 詳細: specification/features_offside.md
       enforcementEnabled: false,
       lineToleranceMeters: 0.5, // 同一ラインとみなす許容誤差 [m]
-      // 0.05/0.1/0.15/0.2/0.3/0.5/0.6/0.8/1.0 を比較。0.2以下は逆に悪化する
-      // （オフサイド率75%超・平均得点も低下）。0.3が最良の組み合わせ（自然な
-      // オフサイド率68%・平均得点4.55、無効時5.10に近い）だったため採用。
-      // 単独では目標(20%未満)に届かないが、団子化なしに95%→68%まで下げられた
-      // （詳細: specification/features_positioning_redesign.md 方式A）。
-      forwardReachFraction: 0.3, // 受け手の前進上限 = distance(ball, goal) * この係数
-      // -0.5〜0.2を比較。負に振るほどオフサイド率は下がるが得点も下がる滑らかな
-      // トレードオフ（-0.2で14%/1.25点、-0.15で33%/2.60点）。目標(20%未満)には
-      // 届かないが、0なら追加コストなしに方式A単独の68%から59%まで改善するため採用。
-      // 詳細は specification/features_positioning_redesign.md 方式C参照。
+      // 受け手の前進上限 = distance(ball, goal) * この係数。0.3→0.7に拡大（2026-08-16、
+      // overshoot正規化後の再チューニング。0.3のままだと前進報酬の上限が低すぎ、正規化後も
+      // 得点が伸び悩んだ）。
+      forwardReachFraction: 0.7,
       arrivalSafetyMarginSeconds: 0, // 到達時間比較の余裕[秒]
       arrivalSampleSteps: 8, // 前進距離のサンプリング段階数
       // 方式E（統一スコアリング）。selectPassReceiver/computeTargetPositionが共有する
-      // scoreReceivingSpot の重み。balance-checkで調整予定の暫定値。
+      // scoreReceivingSpot の重み。advanced/overshoot/markingPressure はいずれも
+      // 無次元（0〜1程度）または残り距離に対する比率として揃えてあるため、重みは
+      // 概ね同スケールで比較できる。
       kpp: {
         forwardWeight: 1, // 前進度（0〜1）への報酬
-        offsideOvershootWeight: 2, // オフサイドライン超過1mあたりのペナルティ
+        // オフサイドライン超過量（残り距離に対する比率）へのペナルティ。2→0.5に変更
+        // （2026-08-16、overshootの正規化に伴う再チューニング。旧2はメートル単位の
+        // 超過量にかけていた値で、正規化後にそのまま使うと過剰に強すぎる）。
+        offsideOvershootWeight: 0.5,
         arrivalDeficitWeight: 1, // 到達時間の遅れ1秒あたりのペナルティ（computeTargetPositionのみ）
         markingWeight: 1, // マーク（敵接近）1mあたりのペナルティ
       },

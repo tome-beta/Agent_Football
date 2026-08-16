@@ -43,11 +43,11 @@ describe("loadConfig", () => {
     // `config.ai.offside.avoidanceEnabled = true` のように直接書き換えると、
     // 以降の loadConfig() 呼び出しすべてに汚染が漏れていた（回帰防止）。
     const config = loadConfig({ random: { seed: 1 } });
-    config.ai.offside.avoidanceEnabled = true;
+    config.ai.offside.avoidanceEnabled = false;
     config.ai.offside.kpp.forwardWeight = 999;
     config.ai.positioning.pressWeight = 999;
 
-    expect(defaultConfig.ai.offside.avoidanceEnabled).toBe(false);
+    expect(defaultConfig.ai.offside.avoidanceEnabled).toBe(true);
     expect(defaultConfig.ai.offside.kpp.forwardWeight).not.toBe(999);
     expect(defaultConfig.ai.positioning.pressWeight).not.toBe(999);
   });

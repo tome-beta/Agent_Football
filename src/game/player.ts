@@ -157,8 +157,9 @@ function scoreReceivingSpot(pos: Vec2, side: TeamSide, ballPos: Vec2, oppTeam: T
   const advanced = remaining > 1e-6 ? Math.max(0, (remaining - distance(pos, goal)) / remaining) : 0;
 
   const lineY = offsideLineY(side, oppTeam, ballPos, config);
-  const overshoot =
+  const overshootMeters =
     side === "A" ? Math.max(0, pos.y - lineY - lineToleranceMeters) : Math.max(0, lineY - pos.y - lineToleranceMeters);
+  const overshoot = remaining > 1e-6 ? overshootMeters / remaining : overshootMeters;
 
   const nearestOppDist = Math.min(...oppTeam.players.map((o) => distance(o.pos, pos)));
   const markingRange = config.ai.tackleDistance * config.ai.markedRadiusFactor;
