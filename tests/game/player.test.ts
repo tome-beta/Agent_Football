@@ -139,8 +139,11 @@ describe("decideAction: possession", () => {
     decideAction(passer, state, config);
 
     // 他に選択肢がなければ、スコアが低くても唯一の候補へパスする（ハード除外ではない）。
+    // offsideOffenderId は enforcementEnabled 時のみセットされる（ステップ2の反則検出用）ため、
+    // ここでは実際に唯一の候補（オフサイドの選手）へキックされたことを lastKickerId/vel で確認する。
     expect(passer.state).toBe("Passing");
-    expect(state.ball.offsideOffenderId).toBe(offsideReceiver.id);
+    expect(state.ball.lastKickerId).toBe(passer.id);
+    expect(state.ball.vel.y).toBeGreaterThan(0); // offsideReceiver は passer より+y側にいる
   });
 
   it("does not flag ball.offsideOffenderId when the receiver is onside", () => {

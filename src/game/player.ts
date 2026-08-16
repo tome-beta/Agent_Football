@@ -265,11 +265,15 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
       const dist = distance(player.pos, receiver.pos);
       const dir = applyAimError(normalize(sub(receiver.pos, player.pos)), player.params.passAccuracy, state, config);
       const power = Math.min(config.ball.maxSpeed, config.ai.passSpeed + dist * config.ai.passSpeedDistanceFactor);
-      // ステップ1の avoidChance をすり抜けてオフサイドの選手へパスしてしまった場合、
-      // 反則判定用にフラグを立てる（ball.offsideOffenderId、ステップ2）。
+      // ステップ1（avoidanceEnabled）をすり抜けた、またはそもそも回避が無効な場合を含め、
+      // 実際にオフサイドの選手へパスしてしまったら反則判定用にフラグを立てる
+      // （ball.offsideOffenderId、ステップ2）。avoidanceEnabled はAIの回避行動の
+      // on/offであり、反則の検出自体（isOffside）とは独立に判定する必要がある
+      // （両者を同じフラグに結びつけていたため、enforcementEnabled単体の効果を
+      // 検証できていなかった。デバッグ調査、2026-08-16）。
       const oppTeam = state.teams[opposite(player.team)];
       ball.offsideOffenderId =
-        config.ai.offside.avoidanceEnabled && isOffside(receiver.pos, player.team, oppTeam, player.pos, config)
+        config.ai.offside.enforcementEnabled && isOffside(receiver.pos, player.team, oppTeam, player.pos, config)
           ? receiver.id
           : null;
       kickBall(ball, dir, power, player.id);
