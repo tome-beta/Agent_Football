@@ -145,7 +145,10 @@ function dribbleSpeedFactor(player: Player, config: GameConfig): number {
  * 改善しても自然なオフサイド率が下がりきらなかった。この断絶を解消するのが狙い。
  *
  *   - forwardWeight: ボールからゴールまでの残り距離に対する前進度（0〜1）への報酬
- *   - offsideOvershootWeight: オフサイドライン超過量[m]へのペナルティ（連続値）
+ *   - offsideOvershootWeight: オフサイドライン超過量を残り距離(remaining)で正規化した比率への
+ *     ペナルティ（advancedと同じ無次元スケール）。旧実装ではメートル単位のまま加減算しており、
+ *     forwardReachFractionで前進報酬の上限が低く抑えられている状況だと小さい重みでも前進報酬を
+ *     即座に打ち消す非線形崩壊を起こしていた（2026-08-16に発見・修正、TODO_ARCHIVE.mdマイルストーンO）
  *   - markingWeight: 最も近い敵選手が `tackleDistance * markedRadiusFactor` より近づいた分[m]
  *     へのペナルティ（旧: binaryな `marked` フラグを連続値化したもの）
  */
@@ -239,15 +242,18 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
   );
   const receiver = ball.possessionTurns < minHoldTurns ? undefined : selectPassReceiver(player, state, config);
   if (receiver !== undefined) {
-    const oppTeamForRisk = state.teams[opposite(player.team)];
+    // isOffside は avoidanceEnabled/enforcementEnabled のどちらの用途にも使う共通の判定なので、
+    // 相手チーム参照ごと1回だけ計算する（2026-08-16リファクタ: 以前は用途ごとに
+    // state.teams[opposite(player.team)] とisOffside呼び出しを重複させていた）。
+    const oppTeam = state.teams[opposite(player.team)];
+    const receiverIsOffside = isOffside(receiver.pos, player.team, oppTeam, player.pos, config);
+
     // 選ばれた受け手がオフサイド濃厚な場合、縦パス一本槍にせず、あえてドリブル継続を
     // 選ぶ確率を引き上げる。オフサイド判定を有効化した際の「自然発生率の高さに攻撃側の
     // 代替手段が耐えられず得点がほぼ0まで崩壊する」問題（TODO.mdマイルストーンK/L）への
-    // 対策の第一歩。avoidanceEnabled が無効なときは isOffside を評価する意味がないため
-    // 何も変えず、デフォルトのゲームバランスに影響しない（既存の同種ガードと同じ方針）。
-    const receiverIsOffsideRisk =
-      config.ai.offside.avoidanceEnabled &&
-      isOffside(receiver.pos, player.team, oppTeamForRisk, player.pos, config);
+    // 対策の第一歩。avoidanceEnabled が無効なときは意味がないため何も変えず、デフォルトの
+    // ゲームバランスに影響しない（既存の同種ガードと同じ方針）。
+    const receiverIsOffsideRisk = config.ai.offside.avoidanceEnabled && receiverIsOffside;
 
     // 受け手がいても、役割ではなく mental/vision に応じた確率であえてドリブルを選ぶことがある。
     // mental が高いほど自分で運びたがり、vision が広いほど受け手を見つけやすくパスを選びやすい。
@@ -272,11 +278,7 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
       // on/offであり、反則の検出自体（isOffside）とは独立に判定する必要がある
       // （両者を同じフラグに結びつけていたため、enforcementEnabled単体の効果を
       // 検証できていなかった。デバッグ調査、2026-08-16）。
-      const oppTeam = state.teams[opposite(player.team)];
-      ball.offsideOffenderId =
-        config.ai.offside.enforcementEnabled && isOffside(receiver.pos, player.team, oppTeam, player.pos, config)
-          ? receiver.id
-          : null;
+      ball.offsideOffenderId = config.ai.offside.enforcementEnabled && receiverIsOffside ? receiver.id : null;
       kickBall(ball, dir, power, player.id);
       player.vel = { x: 0, y: 0 };
       return;
