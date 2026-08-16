@@ -447,6 +447,19 @@ export interface GameConfig {
         markingWeight: number;
       };
     };
+    /** 選手同士の衝突（押し出し）関連の設定。 */
+    collision: {
+      /**
+       * 押し出し量の配分（0.5からの振れ幅）に対する、相手との physical 差1あたりの効き幅。
+       * physical が高いほど自分の移動量が減り、相手を多く押し出す（あたりの強さ）。
+       */
+      physicalSpread: number;
+      /**
+       * 配分比の下限（上限は 1 - この値）。physical 差がどれだけ極端でも、
+       * 一方が完全に動かなくなる（0配分でロックする）ことを防ぐための安全マージン。
+       */
+      minPushRatio: number;
+    };
     /** 意図（PlayerIntent）ベース状態遷移（マイルストーンN）関連の設定。 */
     intent: {
       /**

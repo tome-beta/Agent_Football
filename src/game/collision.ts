@@ -195,8 +195,23 @@ function nearestPlayer(candidates: Player[], ball: Ball): Player | undefined {
 }
 
 /**
- * 選手2人が半径分（`config.player.radius * 2`）重なっていたら、重なり量を半分ずつ
- * 押し戻して分離する（features_2 §4.4 第二ステップ）。
+ * 押し出し量のうち a 側が負担する比率（0〜1）。b 側は `1 - この値`。
+ *
+ * `physical`（カルチョビット「フィジカル」相当＝あたりの強さ）が高いほど自分の
+ * 移動量が減り、相手を多く押し出す。役割分岐ではなく physical の値そのものが
+ * 配分比の差になる（[[feedback_param_driven_behavior]]）。差が極端でも一方が
+ * 完全に動かなくなる（ロックする）ことがないよう `minPushRatio`〜`1-minPushRatio`
+ * の範囲にクランプする。
+ */
+function collisionPushRatio(a: Player, b: Player, config: GameConfig): number {
+  const { physicalSpread, minPushRatio } = config.ai.collision;
+  const raw = 0.5 + (b.params.physical - a.params.physical) * physicalSpread;
+  return Math.max(minPushRatio, Math.min(1 - minPushRatio, raw));
+}
+
+/**
+ * 選手2人が半径分（`config.player.radius * 2`）重なっていたら、重なり量を
+ * physical（あたりの強さ）に応じた比率で押し戻して分離する（features_2 §4.4 第二ステップ）。
  *
  * vel には触れない位置補正のみの実装。速度ベースの反発力にすると、moveToward の
  * 到達減速（震え対策、`player.ts` 参照）と同様の「押し出し→AIが押し戻す→また押し出し」
@@ -215,10 +230,10 @@ export function resolvePlayerPlayer(a: Player, b: Player, config: GameConfig): v
 
   const normal = dist < 1e-9 ? { x: a.id < b.id ? -1 : 1, y: 0 } : scale(delta, 1 / dist);
   const overlap = minDist - dist;
-  const push = scale(normal, overlap / 2);
+  const ratioA = collisionPushRatio(a, b, config);
 
-  a.pos = sub(a.pos, push);
-  b.pos = add(b.pos, push);
+  a.pos = sub(a.pos, scale(normal, overlap * ratioA));
+  b.pos = add(b.pos, scale(normal, overlap * (1 - ratioA)));
 }
 
 /**

@@ -418,6 +418,34 @@ describe("resolvePlayerPlayer", () => {
     expect(b.vel).toEqual({ x: -2, y: 0.5 });
   });
 
+  it("pushes the physically weaker player further (physical = strength in a challenge)", () => {
+    const strong = playerAt("A-DF", "A", { x: -0.1, y: 0 }, "DF");
+    strong.params = { ...strong.params, physical: 0.9 };
+    const weak = playerAt("B-FW", "B", { x: 0.1, y: 0 });
+    weak.params = { ...weak.params, physical: 0.3 };
+
+    resolvePlayerPlayer(strong, weak, config);
+
+    expect(distance(strong.pos, weak.pos)).toBeCloseTo(config.player.radius * 2, 10);
+    // physicalが高いstrongの方が移動量が小さい(=中点からの距離が近い)。
+    const midpoint = 0;
+    expect(Math.abs(strong.pos.x - midpoint)).toBeLessThan(Math.abs(weak.pos.x - midpoint));
+  });
+
+  it("clamps the push ratio so nobody is fully locked even with an extreme physical gap", () => {
+    const cfg: GameConfig = { ...config, ai: { ...config.ai, collision: { physicalSpread: 10, minPushRatio: 0.15 } } };
+    const strong = playerAt("A-DF", "A", { x: -0.1, y: 0 }, "DF");
+    strong.params = { ...strong.params, physical: 1 };
+    const weak = playerAt("B-FW", "B", { x: 0.1, y: 0 });
+    weak.params = { ...weak.params, physical: 0 };
+
+    resolvePlayerPlayer(strong, weak, cfg);
+
+    // strongも最低minPushRatio分は動く(完全にロックされない)。
+    expect(strong.pos.x).not.toBe(-0.1);
+    expect(distance(strong.pos, weak.pos)).toBeCloseTo(config.player.radius * 2, 10);
+  });
+
   it("separates fully overlapping players deterministically along a fixed axis", () => {
     const a = playerAt("A-FW", "A", { x: 3, y: 4 });
     const b = playerAt("B-DF", "B", { x: 3, y: 4 });
