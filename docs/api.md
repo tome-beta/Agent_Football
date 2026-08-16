@@ -208,7 +208,8 @@ function chance(holder: RngHolder, p: number): boolean;               // 確率 
 | `canKick` | `(player, ball, config) => boolean` | 実装済み。`ai.ballControlDistance` 以内か |
 | `resolvePlayerBall` | `(player, ball, config) => boolean` | 実装済み。解決後にこの選手が保持しているかを返す |
 | `resolveBallPossession` | `(players: Player[], ball, config, prevBallPos: Vec2, rng: RngHolder) => void` | 実装済み。全選手を見て保持者を決める。`prevBallPos` はこのターンの `stepBall` 呼び出し前のボール位置（インターセプト判定の軌跡の始点）、`rng` は確率判定用（`GameState` を渡せばよい） |
-| `resolvePlayerPlayer` | `(a, b, config) => void` | 実装済み（**意図的に no-op**。第一ステップでは選手同士は通り抜ける） |
+| `resolvePlayerPlayer` | `(a: Player, b: Player, config) => void` | 実装済み。2人の距離が `player.radius * 2` 未満なら重なり量を半分ずつ押し戻す位置補正のみ（`vel` は変更しない）。中心が完全一致する縮退ケースは id の文字列比較で決定的に軸を割り振る |
+| `resolveAllPlayerCollisions` | `(players: Player[], config) => void` | 実装済み。全ペアに `resolvePlayerPlayer` を適用する。3人以上のクラスタ状の重なりに対応するため10回リラクゼーションする。`Simulator.step` が `stepPlayer` の直後・ボール判定の前に呼ぶ |
 
 ### 責務の分け方
 

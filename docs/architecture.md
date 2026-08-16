@@ -20,7 +20,7 @@
 - `ball.ts`: ボール物理演算（速度、加速度、移動）
 - `player.ts`: プレイヤーロジック（位置、速度、行動）
 - `match.ts`: マッチシミュレーション（全体制御、ターン管理）
-- `collision.ts`: 当たり判定（キック距離・トラップ・保持中の追従・奪取）
+- `collision.ts`: 当たり判定（キック距離・トラップ・保持中の追従・奪取・選手同士の衝突による押し出し）
 - `random.ts`: 決定的乱数（`Math.random()` は使わない）
 - `utils.ts`: ベクトル演算など共通ユーティリティ
 
@@ -82,9 +82,9 @@ simulation (types + game + renderer 依存)
 ┌──────────────────────────────────────────────────────┐
 │ Simulator.step()                                     │
 ├──────────────────────────────────────────────────────┤
-│ phase が KICKOFF/PLAYING のときだけ 1〜4 を実行       │
+│ phase が KICKOFF/PLAYING のときだけ 1〜5 を実行       │
 │ （GOAL_SCORED/RESTART_SETUP/HALF_TIME は選手・ボール │
-│  を止め、5だけ行う）                                  │
+│  を止め、6だけ行う）                                  │
 │                                                        │
 │ 1. decideAction(player, state, config)  … 全選手     │
 │      行動ステートマシンで意思決定・キック指示        │
@@ -92,18 +92,22 @@ simulation (types + game + renderer 依存)
 │ 2. stepPlayer(player, config)           … 全選手     │
 │      pos += vel * dt                                 │
 │    ↓                                                 │
-│ 3. stepBall(ball, config)                            │
+│ 3. resolveAllPlayerCollisions(players, config)       │
+│      選手同士が radius*2 未満に重なったら半分ずつ    │
+│      押し戻す（位置補正のみ、velは変更しない）        │
+│    ↓                                                 │
+│ 4. stepBall(ball, config)                            │
 │      位置更新 → 摩擦 → 速度上限 → 停止閾値          │
 │    ↓                                                 │
-│ 4. resolveBallPossession(players, ball, config,      │
+│ 5. resolveBallPossession(players, ball, config,      │
 │                          prevBallPos, state)         │
 │      全選手を見て保持者を決める（トラップ・奪取・    │
 │      インターセプト・保持中の追従）                  │
 │    ↓                                                 │
-│ 5. stepMatch(state, config)                          │
+│ 6. stepMatch(state, config)                          │
 │      ゴール／アウト判定、フェーズ遷移、ターン加算    │
 │    ↓                                                 │
-│ 6. Renderer（drawPitch / drawPlayers / drawBall /    │
+│ 7. Renderer（drawPitch / drawPlayers / drawBall /    │
 │    drawHud）と Logger へ出力                         │
 │    ↓ 次のターンへ                                    │
 └──────────────────────────────────────────────────────┘

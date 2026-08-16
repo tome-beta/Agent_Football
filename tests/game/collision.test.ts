@@ -4,7 +4,9 @@ import {
   resolvePlayerBall,
   resolveBallPossession,
   resolvePlayerPlayer,
+  resolveAllPlayerCollisions,
 } from "../../src/game/collision";
+import { distance } from "../../src/game/utils";
 import { createBall } from "../../src/game/ball";
 import { createPlayer } from "../../src/game/player";
 import { loadConfig } from "../../src/simulation/config";
@@ -371,15 +373,98 @@ describe("resolveBallPossession", () => {
 });
 
 describe("resolvePlayerPlayer", () => {
-  it("does nothing: players pass through each other in step 1", () => {
+  it("does nothing when players are already far apart", () => {
     const a = playerAt("A-FW", "A", { x: 0, y: 0 });
-    const b = playerAt("B-DF", "B", { x: 0, y: 0 });
-    a.vel = { x: 1, y: 1 };
+    const b = playerAt("B-DF", "B", { x: config.player.radius * 2 + 1, y: 0 });
 
     resolvePlayerPlayer(a, b, config);
 
     expect(a.pos).toEqual({ x: 0, y: 0 });
-    expect(b.pos).toEqual({ x: 0, y: 0 });
+    expect(b.pos).toEqual({ x: config.player.radius * 2 + 1, y: 0 });
+  });
+
+  it("does not touch each other exactly at the minimum distance", () => {
+    const minDist = config.player.radius * 2;
+    const a = playerAt("A-FW", "A", { x: 0, y: 0 });
+    const b = playerAt("B-DF", "B", { x: minDist, y: 0 });
+
+    resolvePlayerPlayer(a, b, config);
+
+    expect(a.pos).toEqual({ x: 0, y: 0 });
+    expect(b.pos).toEqual({ x: minDist, y: 0 });
+  });
+
+  it("pushes overlapping players apart to exactly the minimum distance, evenly", () => {
+    const a = playerAt("A-FW", "A", { x: -0.1, y: 0 });
+    const b = playerAt("B-DF", "B", { x: 0.1, y: 0 });
+
+    resolvePlayerPlayer(a, b, config);
+
+    expect(distance(a.pos, b.pos)).toBeCloseTo(config.player.radius * 2, 10);
+    // 中点(0,0)を中心に均等に押し戻される。
+    expect(a.pos.x).toBeCloseTo(-config.player.radius, 10);
+    expect(b.pos.x).toBeCloseTo(config.player.radius, 10);
+  });
+
+  it("does not change velocity", () => {
+    const a = playerAt("A-FW", "A", { x: 0, y: 0 });
+    const b = playerAt("B-DF", "B", { x: 0, y: 0 });
+    a.vel = { x: 1, y: 1 };
+    b.vel = { x: -2, y: 0.5 };
+
+    resolvePlayerPlayer(a, b, config);
+
     expect(a.vel).toEqual({ x: 1, y: 1 });
+    expect(b.vel).toEqual({ x: -2, y: 0.5 });
+  });
+
+  it("separates fully overlapping players deterministically along a fixed axis", () => {
+    const a = playerAt("A-FW", "A", { x: 3, y: 4 });
+    const b = playerAt("B-DF", "B", { x: 3, y: 4 });
+
+    resolvePlayerPlayer(a, b, config);
+
+    expect(distance(a.pos, b.pos)).toBeCloseTo(config.player.radius * 2, 10);
+    // id比較で決定的に分離するので、同じ入力なら常に同じ結果。
+    const a2 = playerAt("A-FW", "A", { x: 3, y: 4 });
+    const b2 = playerAt("B-DF", "B", { x: 3, y: 4 });
+    resolvePlayerPlayer(a2, b2, config);
+    expect(a2.pos).toEqual(a.pos);
+    expect(b2.pos).toEqual(b.pos);
+  });
+});
+
+describe("resolveAllPlayerCollisions", () => {
+  it("separates every pair to at least the minimum distance", () => {
+    // 6人を密集させて重ねる（3対3のクラスタ状の重なりを再現）。
+    const players = [
+      playerAt("A-FW", "A", { x: 0, y: 0 }),
+      playerAt("A-MF", "A", { x: 0.1, y: 0 }, "MF"),
+      playerAt("A-DF", "A", { x: 0, y: 0.1 }, "DF"),
+      playerAt("B-FW", "B", { x: 0.1, y: 0.1 }),
+      playerAt("B-MF", "B", { x: -0.1, y: 0 }, "MF"),
+      playerAt("B-DF", "B", { x: 0, y: -0.1 }, "DF"),
+    ];
+
+    resolveAllPlayerCollisions(players, config);
+
+    const minDist = config.player.radius * 2;
+    for (let i = 0; i < players.length; i++) {
+      for (let j = i + 1; j < players.length; j++) {
+        expect(distance(players[i].pos, players[j].pos)).toBeGreaterThanOrEqual(minDist - 1e-3);
+      }
+    }
+  });
+
+  it("does not move players that are already spaced out", () => {
+    const players = [
+      playerAt("A-FW", "A", { x: 0, y: 0 }),
+      playerAt("B-DF", "B", { x: 10, y: 10 }),
+    ];
+
+    resolveAllPlayerCollisions(players, config);
+
+    expect(players[0].pos).toEqual({ x: 0, y: 0 });
+    expect(players[1].pos).toEqual({ x: 10, y: 10 });
   });
 });
