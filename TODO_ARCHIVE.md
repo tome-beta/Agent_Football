@@ -205,6 +205,16 @@
 - [x] 「3対3で常にマンマーク相当になり数的優位を作れないのでは」という仮説を、Aチームに選手を1〜3人追加（4〜6vs3）して検証 — `avoidanceEnabled=false`では数的優位が期待通り圧倒的に効く（4vs3でA平均10.45点 vs B平均2.25点）が、**`avoidanceEnabled=true`では+1人で0.05→0.25まで改善したものの+2人で0.05に逆戻りするなど傾向が不明瞭**（絶対値が小さすぎてノイズに埋もれている可能性が高い、20シードでは検証力不足）
 - [x] 上記の実験中に副産物として、このAIの守備（`computeTargetPosition`のcoverBias）が**マンマークではなくボール中心のゾーンディフェンス**であると再確認した。特定の敵を「担当」する仕組みがないため、攻撃側の人数を増やしても「余った1人が自動的にフリーになる」というマンマーク前提の数的優位効果がそのまま出るとは限らない。数的優位を活かすには守備方式自体の見直しが必要な可能性がある
 
+### マイルストーンO: オフサイド回避（ステップ1）の単位不一致バグ修正と実用化 ✅ 完了（2026-08-16）
+
+`avoidanceEnabled=true` が2026-08-08から崩壊（平均得点0.00〜0.20）したまま既定 `false` で塩漬けになっていた件を、コードレベルで再調査した。
+
+- [x] 前提バグを発見・修正 `player` — `ball.offsideOffenderId`（ステップ2の反則フラグ）のセット条件が `enforcementEnabled` ではなく誤って `avoidanceEnabled` を参照していた。このため過去のマイルストーンJ〜Mの「反則有効化で崩壊」調査は常に `avoidanceEnabled` の別バグ（下記）を道連れにしており、`enforcementEnabled` 単体の効果を一度も正しく検証できていなかったと判明。フラグを `enforcementEnabled` に正しく連動させ、両者を独立にbalance-checkできるようにした
+- [x] `avoidanceEnabled` 単体の崩壊原因を特定・修正 `player`（`scoreReceivingSpot`）— 「オフサイド回避（ステップ1）」参照。`advanced`（前進度、0〜1の無次元値）に `overshoot`（オフサイドライン超過量、非正規化のメートル単位）をそのまま加減算していたのが原因。`forwardReachFraction=0.3` で前進報酬の上限が0.3程度に抑えられていたため、`offsideOvershootWeight` が0.25程度でも即座に前進報酬を消し飛ばし、非線形の崖状崩壊（0→0.20付近で急落）を起こしていた。`overshoot` を `remaining`（ボールからゴールまでの残り距離）で正規化して `advanced` と同じスケールに揃えたところ、崖が滑らかなトレードオフ（重み0→5.00、1→3.40、2→0.90、4→0.00）に変わった
+- [x] 正規化後に `forwardReachFraction`/`kpp.offsideOvershootWeight` を再チューニング — `forwardReachFraction: 0.3→0.7`・`offsideOvershootWeight: 2→0.5` の組み合わせで20シードのbalance-check平均得点5.10（無効時6.05）まで回復。`avoidanceEnabled` を既定 `true` に変更した（`src/config/default.ts`）
+- [x] `enforcementEnabled` を正規化後の値で改めて再検証 — `avoidanceEnabled`+`enforcementEnabled` を両方有効にした状態で `forwardReachFraction ∈ {0.4,0.5,0.6,0.7}` × `offsideOvershootWeight ∈ {0.5,1,1.5,2}` をグリッドサーチした。反則率（実行されたパスのうちオフサイド判定された割合）を50%台から28%以下まで下げようとすると平均得点が2.1前後→0.2〜0.4まで急落する団子化が再現し、反則率・得点を両立するパラメータは見つからなかった。**「単位不一致バグのせいで見えていなかっただけ」ではなく、正規化後も同じ構造的限界（マイルストーンJ/Lの「弱めると反則率が高いまま、強めると団子化」）が残っている**ことを確認したため、`enforcementEnabled` は引き続き `false` のまま維持する
+- [x] テスト修正 `tests/game/player.test.ts`（`offsideOffenderId` を `enforcementEnabled` 前提のフラグとして扱うよう1件修正）・`tests/simulation/config.test.ts`（`avoidanceEnabled` の既定値変更に伴う mutation isolation テストの期待値を反転）
+
 ### 選手同士の衝突処理 ✅ 完了（2026-08-16）
 
 第二ステップ以降で後回しにしていた「選手同士が重なることを防ぐ」仕様（`features_2_ball_pitch.md` §4.4）を実装。ブランチ: `feature/player-collision`。
