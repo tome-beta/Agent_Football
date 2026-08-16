@@ -454,16 +454,28 @@ function computeApproachPoint(
   };
 }
 
-/** 味方が minSpacing 未満に近づいていれば離れる方向へ target を補正する。 */
+/**
+ * 味方が minSpacing 未満に近づいていれば離れる方向へ target を補正する。
+ *
+ * minSpacing は固定値ではなく、自分の mental の偏差でその場ごとに振れる。固定値のままだと
+ * 全員が同じ間隔を保とうとして正三角形に近い均等配置に収束して見える（ユーザー指摘、
+ * 2026-08-16）。mental が高い（独立心が強い/自分のスペースを主張する）選手ほど広い間隔を
+ * 要求し、低い選手は密集を許容する、という個性の差をそのまま「一人だけ大きく開く」
+ * 非対称な陣形として表現する狙い（receivingDistanceFactor の mental 依存と同じ考え方）。
+ */
 function applyTeammateRepulsion(player: Player, target: Vec2, myTeam: Team, p: GameConfig["ai"]["positioning"]): Vec2 {
+  const minSpacing = Math.max(
+    0,
+    p.minSpacing + (player.params.mental - 0.5) * p.minSpacingMentalSpread
+  );
   let result = target;
   for (const mate of myTeam.players) {
     if (mate.id === player.id) continue;
     const d = distance(player.pos, mate.pos);
-    if (d < p.minSpacing) {
+    if (d < minSpacing) {
       const away = sub(player.pos, mate.pos);
       if (length(away) > 1e-6) {
-        const strength = ((p.minSpacing - d) / p.minSpacing) * p.repulsionWeight;
+        const strength = ((minSpacing - d) / minSpacing) * p.repulsionWeight;
         result = add(result, scale(normalize(away), strength));
       }
     }
