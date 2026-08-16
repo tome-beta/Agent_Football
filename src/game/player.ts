@@ -180,6 +180,14 @@ function scoreReceivingSpot(pos: Vec2, side: TeamSide, ballPos: Vec2, oppTeam: T
  * 横や後ろにいる味方（実戦でもよくある）が常に候補から漏れてしまう。距離（`passDistance`）
  * だけで絞り込む。
  */
+/** avoidanceEnabled 無効時の受け手スコア（旧式）: マークされていたら大幅減点し、あとはゴールに近いほど良い。 */
+function legacyReceiverScore(candidatePos: Vec2, goal: Vec2, oppTeam: Team, config: GameConfig): number {
+  const marked = oppTeam.players.some(
+    (o) => distance(o.pos, candidatePos) <= config.ai.tackleDistance * config.ai.markedRadiusFactor
+  );
+  return (marked ? -1000 : 0) - distance(candidatePos, goal);
+}
+
 function selectPassReceiver(player: Player, state: GameState, config: GameConfig): Player | undefined {
   const myTeam = state.teams[player.team];
   const oppTeam = state.teams[opposite(player.team)];
@@ -197,12 +205,7 @@ function selectPassReceiver(player: Player, state: GameState, config: GameConfig
     // デフォルトのゲームバランス（オフサイド機能オフ時の挙動）を変えない。
     const score = config.ai.offside.avoidanceEnabled
       ? scoreReceivingSpot(candidate.pos, player.team, player.pos, oppTeam, config)
-      : (() => {
-          const marked = oppTeam.players.some(
-            (o) => distance(o.pos, candidate.pos) <= config.ai.tackleDistance * config.ai.markedRadiusFactor
-          );
-          return (marked ? -1000 : 0) - distance(candidate.pos, goal);
-        })();
+      : legacyReceiverScore(candidate.pos, goal, oppTeam, config);
     if (score > bestScore) {
       bestScore = score;
       best = candidate;
