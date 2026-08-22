@@ -121,7 +121,9 @@ export type MatchPhase =
   | "GOAL_SCORED"
   | "RESTART_SETUP"
   | "HALF_TIME"
-  | "MATCH_END";
+  | "MATCH_END"
+  | "OFFSIDE_STOP"
+  | "OFFSIDE_RESUME";
 
 export interface ScoreLogEntry {
   team: TeamSide;
@@ -545,6 +547,10 @@ export interface GameConfig {
     restartSetupTurns: number;
     /** KICKOFF に留まるターン数。 */
     kickoffTurns: number;
+    /** OFFSIDE_STOP（「オフサイド」表示）に留まるターン数。 */
+    offsideStopTurns: number;
+    /** OFFSIDE_RESUME（「プレー再開」表示）に留まるターン数。 */
+    offsideResumeTurns: number;
   };
   physics: {
     /** 1ターンの経過時間 [秒]。 */

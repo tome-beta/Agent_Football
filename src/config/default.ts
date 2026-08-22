@@ -247,9 +247,15 @@ export const defaultConfig: GameConfig = {
   match: {
     // dt = 0.1s なので 900ターン = 前半90秒。
     turnsPerHalf: 900,
-    goalScoredTurns: 20,
+    // GOAL_SCORED/OFFSIDE_STOP/OFFSIDE_RESUME の実際の表示時間は、シミュレーションの
+    // ターン数ではなく main.ts 側で現実時間（壁時計）5秒として管理する
+    // （ユーザー指摘：試合速度やspeedMultiplierに応じて表示時間が変わってしまうのは望ましくない）。
+    // ここでの値は「フェーズを1回のstepMatch呼び出しで抜けられる」ための最小値でよい。
+    goalScoredTurns: 1,
     restartSetupTurns: 10,
     kickoffTurns: 5,
+    offsideStopTurns: 1,
+    offsideResumeTurns: 1,
   },
   physics: {
     dt: 0.1,

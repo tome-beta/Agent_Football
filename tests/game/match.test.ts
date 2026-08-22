@@ -366,7 +366,14 @@ describe("stepMatch", () => {
 
   it("runs a full match to completion without throwing", () => {
     const config = loadConfig({
-      match: { turnsPerHalf: 20, goalScoredTurns: 2, restartSetupTurns: 2, kickoffTurns: 2 },
+      match: {
+        turnsPerHalf: 20,
+        goalScoredTurns: 2,
+        restartSetupTurns: 2,
+        kickoffTurns: 2,
+        offsideStopTurns: 2,
+        offsideResumeTurns: 2,
+      },
     });
     const state = createInitialState(config);
     let guard = 0;

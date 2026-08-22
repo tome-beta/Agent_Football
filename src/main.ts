@@ -125,17 +125,37 @@ function main() {
   let speedMultiplier = 1;
   let stepAccumulator = 0;
 
+  // ゴール／オフサイドの演出フェーズは、シミュレーションのターン数やspeedMultiplierに
+  // 左右されず常に現実時間で約5秒表示したい（ユーザー要望）。このフェーズの間だけ
+  // simulator.step() の呼び出しを壁時計（rAFのタイムスタンプ）で止めることで実現する。
+  const MESSAGE_PHASES = new Set<string>(["GOAL_SCORED", "OFFSIDE_STOP", "OFFSIDE_RESUME"]);
+  const MESSAGE_HOLD_MS = 2000;
+  let lastMessagePhase: string | null = null;
+  let messageHoldUntil = 0;
+
   // rAF の連鎖自体は一時停止中も止めない。running フラグで simulator.step() の
   // 実行だけを止めることで、一時停止/再開の反映タイミングが requestAnimationFrame の
   // ID管理に依存しないようにする（前回の実装は rafId が非null のままの一瞬に
   // 再開を押すと反映されないことがあった）。
-  function loop() {
+  function loop(now: number) {
     if (running) {
-      stepAccumulator += speedMultiplier;
-      while (stepAccumulator >= 1) {
-        simulator.step();
-        stepAccumulator -= 1;
-        if (simulator.state.phase === "MATCH_END") break;
+      if (MESSAGE_PHASES.has(simulator.state.phase)) {
+        if (simulator.state.phase !== lastMessagePhase) {
+          lastMessagePhase = simulator.state.phase;
+          messageHoldUntil = now + MESSAGE_HOLD_MS;
+        }
+        if (now >= messageHoldUntil) {
+          simulator.step();
+        }
+      } else {
+        lastMessagePhase = null;
+        stepAccumulator += speedMultiplier;
+        while (stepAccumulator >= 1) {
+          simulator.step();
+          stepAccumulator -= 1;
+          if (simulator.state.phase === "MATCH_END") break;
+          if (MESSAGE_PHASES.has(simulator.state.phase)) break;
+        }
       }
     }
     if (simulator.state.phase === "MATCH_END") {
@@ -171,6 +191,8 @@ function main() {
     simulator = new Simulator(config, renderer, new ConsoleLogger());
     running = true;
     stepAccumulator = 0;
+    lastMessagePhase = null;
+    messageHoldUntil = 0;
     toggleBtn.textContent = "一時停止";
     ensureLoopAlive();
   });

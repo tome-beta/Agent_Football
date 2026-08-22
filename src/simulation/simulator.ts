@@ -36,7 +36,7 @@ export class Simulator {
    *      （resolveAllPlayerCollisions） 4. ボール更新（stepBall） 5. 当たり判定
    *      （resolveBallPossession） 6. 状態更新（stepMatch） 7. 描画
    *
-   * KICKOFF/PLAYING 以外（GOAL_SCORED/RESTART_SETUP/HALF_TIME）は選手・ボールを止め、
+   * KICKOFF/PLAYING 以外（GOAL_SCORED/RESTART_SETUP/HALF_TIME/OFFSIDE_STOP/OFFSIDE_RESUME）は選手・ボールを止め、
    * `stepMatch` によるフェーズ進行のみ行う。
    */
   step(): void {

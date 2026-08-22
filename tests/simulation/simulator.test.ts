@@ -8,7 +8,14 @@ import type { GameState, ScoreLogEntry } from "../../src/types";
 
 function fastConfig() {
   return loadConfig({
-    match: { turnsPerHalf: 30, goalScoredTurns: 2, restartSetupTurns: 2, kickoffTurns: 2 },
+    match: {
+      turnsPerHalf: 30,
+      goalScoredTurns: 2,
+      restartSetupTurns: 2,
+      kickoffTurns: 2,
+      offsideStopTurns: 2,
+      offsideResumeTurns: 2,
+    },
   });
 }
 

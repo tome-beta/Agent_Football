@@ -87,16 +87,46 @@ export class CanvasRenderer implements Renderer {
     ctx.arc(canvas.width / 2, canvas.height / 2, 6 * SCALE, 0, Math.PI * 2);
     ctx.stroke();
 
-    // 両ゴール（ピッチ左右の端、goalWidth の幅で黄色く強調）
+    // 両ゴール（ピッチ左右の端、goalWidth の幅で強調）。
+    // ゲーム座標 y=-length/2（画面左）が Team A の守るゴール、y=+length/2（画面右）が
+    // Team B の守るゴール（`Pitch.isInGoalA`/`isInGoalB`、docs/development_guide.md §座標系）。
+    // どちらが自陣かひと目でわかるよう、ゴールをチームカラーで塗り分ける。
     const goalHalf = (config.pitch.goalWidth / 2) * SCALE;
-    ctx.strokeStyle = "#ffeb3b";
     ctx.lineWidth = 4;
-    for (const x of [topLeft.x, topLeft.x + w]) {
+    for (const [x, color] of [
+      [topLeft.x, TEAM_COLOR.A],
+      [topLeft.x + w, TEAM_COLOR.B],
+    ] as const) {
+      ctx.strokeStyle = color;
       ctx.beginPath();
       ctx.moveTo(x, canvas.height / 2 - goalHalf);
       ctx.lineTo(x, canvas.height / 2 + goalHalf);
       ctx.stroke();
     }
+
+    this.drawAttackDirectionArrows(topLeft, w, h);
+  }
+
+  /**
+   * どちらのチームがどちら向きに攻めているかを、ピッチ下端にチームカラーの矢印付き
+   * ラベルで大きく表示する（ユーザー指摘：見た目だけでは攻撃方向がわかりにくい）。
+   * Team A は +y（画面右）攻撃、Team B は -y（画面左）攻撃で、これは前後半を通して
+   * 固定（`kickoffSide` が変わるだけでゴールの持ち主自体は入れ替わらない）。
+   */
+  private drawAttackDirectionArrows(topLeft: Vec2, w: number, h: number): void {
+    const { ctx } = this;
+    const y = topLeft.y + h - 14;
+
+    ctx.font = "bold 24px sans-serif";
+    ctx.textBaseline = "alphabetic";
+
+    ctx.fillStyle = TEAM_COLOR.A;
+    ctx.textAlign = "left";
+    ctx.fillText("A →", topLeft.x + 12, y);
+
+    ctx.fillStyle = TEAM_COLOR.B;
+    ctx.textAlign = "right";
+    ctx.fillText("← B", topLeft.x + w - 12, y);
   }
 
   /** 選手をチーム色の円で描画し、円の上に役割（FW/MF/DF）をラベル表示する。`setDebugVision(true)` 中は視野範囲も重ね描きする。 */
@@ -173,5 +203,39 @@ export class CanvasRenderer implements Renderer {
     ctx.textAlign = "left";
     ctx.fillText(`Team A ${score.A} - ${score.B} Team B`, 8, 16);
     ctx.fillText(`Turn ${state.turn}  ${state.phase}  Half ${state.half}`, 8, 32);
+
+    this.drawMessageBanner(state);
+  }
+
+  /**
+   * ゴール／オフサイドの反則が起きたことを画面で分かるようにする（ユーザー要望）。
+   * GOAL_SCORED で「ゴール！」、OFFSIDE_STOP で「オフサイド」、OFFSIDE_RESUME で
+   * 「プレー再開」を画面中央に大きく表示する。それ以外のフェーズでは何も描画しない。
+   * 実際の表示時間（現実時間で約5秒）は main.ts 側の壁時計ベースの一時停止で管理する
+   * （シミュレーションのターン数・speedMultiplierに左右されないようにするため）。
+   */
+  private drawMessageBanner(state: GameState): void {
+    const text =
+      state.phase === "GOAL_SCORED"
+        ? "ゴール！"
+        : state.phase === "OFFSIDE_STOP"
+          ? "オフサイド"
+          : state.phase === "OFFSIDE_RESUME"
+            ? "プレー再開"
+            : null;
+    if (text === null) return;
+
+    const { ctx, canvas } = this;
+
+    ctx.save();
+    ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+    ctx.fillRect(0, canvas.height / 2 - 30, canvas.width, 60);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 28px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+    ctx.restore();
   }
 }

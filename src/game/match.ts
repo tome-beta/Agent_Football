@@ -106,6 +106,9 @@ function checkGoal(state: GameState, pitch: Pitch): boolean {
  * その選手が実際にボールを保持した瞬間に反則が成立し、相手ボールで現在地から再開する。
  * それ以外の選手（味方/敵）が先に触れた場合は不成立としてフラグだけ消す。
  * まだ誰も触れていない（Free のまま）場合は何もせず次ターンへ持ち越す。
+ *
+ * 反則成立時は即座に PLAYING を続けず OFFSIDE_STOP に入り、画面に「オフサイド」の表示を
+ * 出しつつ試合を一旦停止する（ユーザー要望：反則が起きたことを見た目でわかるようにしたい）。
  */
 function handleOffside(state: GameState, config: GameConfig): boolean {
   const { ball } = state;
@@ -127,6 +130,9 @@ function handleOffside(state: GameState, config: GameConfig): boolean {
   ball.possessorId = receiver.id;
   ball.pos = { ...receiver.pos };
   ball.offsideOffenderId = null;
+
+  state.phase = "OFFSIDE_STOP";
+  state.phaseTurn = 0;
   return true;
 }
 
@@ -209,6 +215,20 @@ export function advancePhase(state: GameState, config: GameConfig): void {
       state.phase = "KICKOFF";
       state.phaseTurn = 0;
       setupKickoff(state, config);
+      break;
+
+    case "OFFSIDE_STOP":
+      if (state.phaseTurn >= config.match.offsideStopTurns) {
+        state.phase = "OFFSIDE_RESUME";
+        state.phaseTurn = 0;
+      }
+      break;
+
+    case "OFFSIDE_RESUME":
+      if (state.phaseTurn >= config.match.offsideResumeTurns) {
+        state.phase = "PLAYING";
+        state.phaseTurn = 0;
+      }
       break;
 
     case "MATCH_END":
