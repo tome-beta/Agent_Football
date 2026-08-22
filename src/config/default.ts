@@ -72,6 +72,15 @@ export const defaultConfig: GameConfig = {
     // 視覚的な効果とバランスの安定性を見て0.5を採用（平均得点5.10）。
     soloDribbleSpeedFactor: 0.5, // 前方に味方がいないときの追加減速率
     soloDribbleSupportMargin: 2, // 「前方に味方がいる」とみなす最小の前進差 [m]
+    clear: {
+      dangerDistance: 18, // 自ゴールからこの距離以内のみクリアを検討する（自陣ペナルティエリア相当）
+      pressureDistance: 5, // この距離以内に敵がいるときのみクリアを検討する（tackleDistanceより早めに反応させ、詰められる前に逃がす）
+      chanceBase: 0.5, // mental=0.5の選手が条件成立時にクリアを選ぶ基準確率
+      chanceMentalSpread: -0.5, // mentalの偏差1あたりの変化幅（低いmental＝DF的な選手ほどクリアを選びやすい）
+      urgencyWeight: 0.6, // 敵がtackleDistanceまで詰めてきたときにchanceBaseへ上乗せする量（タックル被弾直前はほぼ確実にクリアする。6/0.9まで強めても効果は横ばいだったため0.6で十分と判断）
+      speed: 22, // クリアキックの初速 [m/s]（shootSpeedと同水準、飛距離優先）
+      accuracy: 0.2, // クリアの狙いの正確度（低めに固定し、精度より飛距離・脱出を優先する）
+    },
     positioning: {
       ballPullWeight: 0.5, // home からの追従上限 = distance(home, ownGoal) * この係数
       repulsionWeight: 4, // 味方が近すぎるときに離れる力の強さ [m]

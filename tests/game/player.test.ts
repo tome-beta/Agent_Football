@@ -34,6 +34,32 @@ describe("decideAction: possession", () => {
     expect(state.ball.vel.y).toBeGreaterThan(0);
   });
 
+  it("clears the ball away from own goal when pinned near it under pressure", () => {
+    const config = loadConfig({ random: { seed: 1 } });
+    const state = createInitialState(config);
+    const defender = state.teams.A.players.find((p) => p.role === "DF")!;
+    const opponent = state.teams.B.players[0];
+
+    // Aチームの自ゴールは -y 側。ゴール近くで敵に詰められている状況を作る。
+    defender.pos = { x: 0, y: -config.pitch.length / 2 + 5 };
+    opponent.pos = { x: 0, y: -config.pitch.length / 2 + 6 };
+    state.ball.pos = { ...defender.pos };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = defender.id;
+    state.ball.possessionTurns = 999;
+
+    config.ai.shootProbability = 0; // シュート条件（距離）にも掛からないが念のため無効化
+    config.ai.clear.chanceBase = 1; // クリアを確実に選ばせる
+
+    decideAction(defender, state, config);
+
+    expect(defender.state).toBe("Clearing");
+    expect(state.ball.status).toBe("Free");
+    expect(state.ball.lastKickerId).toBe(defender.id);
+    // 自ゴール(-y方向)から離れる、つまり+y方向に蹴られている
+    expect(state.ball.vel.y).toBeGreaterThan(0);
+  });
+
   it("passes to a visible teammate when no shot is taken", () => {
     const config = loadConfig({ random: { seed: 1 } });
     const state = createInitialState(config);

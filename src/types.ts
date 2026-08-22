@@ -14,6 +14,7 @@ export type PlayerActionState =
   | "Passing"
   | "Receiving"
   | "Shooting"
+  | "Clearing"
   | "Marking"
   | "MovingToSpace";
 
@@ -299,6 +300,27 @@ export interface GameConfig {
      * 味方がいないのと同じ扱いにする（僅差でチラつくのを防ぐ）。
      */
     soloDribbleSupportMargin: number;
+    /** ゴール前へ押し込まれたときの「クリア」（陣地回復優先の大きな縦蹴り）に関する設定。 */
+    clear: {
+      /** 自ゴールからこの距離 [m] 以内にいるときのみクリアを検討する（自陣ペナルティエリア相当）。 */
+      dangerDistance: number;
+      /** この距離 [m] 以内に敵がいる（＝詰められている）ときのみクリアを検討する。 */
+      pressureDistance: number;
+      /** mental = 0.5 のときのクリアを選ぶ基準確率（パス/ドリブル判定より先に評価する）。 */
+      chanceBase: number;
+      /** mental の偏差1あたり chanceBase をどれだけ振るか（積極的な選手ほど自分で捌こうとしクリアを選びにくい）。 */
+      chanceMentalSpread: number;
+      /**
+       * 敵がtackleDistanceまで詰めてきたとき（切迫度urgency=1）、chanceBaseに上乗せする量。
+       * pressureDistance到達時点（urgency=0）では効果なし。タックルで奪われる直前ほど
+       * ほぼ確実にクリアへ逃げるようにし、自陣ゴール付近でのタックル被弾を減らす狙い。
+       */
+      urgencyWeight: number;
+      /** クリアキックの初速 [m/s]（狙いの精度より飛距離を優先するため shootSpeed 相当）。 */
+      speed: number;
+      /** クリアの狙いの正確度（0〜1。低いほど aimErrorMaxDeg に近いブレが乗る）。陣地回復が目的で精度は二の次のため低めに固定。 */
+      accuracy: number;
+    };
     /** 非保持時のポジショニングを力の合成で決めるための重み（マイルストーンH）。 */
     positioning: {
       /** ボールを追う度合い。home からの追従距離の上限は distance(home, ownGoal) * この係数。 */

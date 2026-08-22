@@ -255,6 +255,49 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
     }
   }
 
+  // ゴール前に押し込まれている（自ゴールに近く、敵に詰められている）場合は、パス/ドリブルより
+  // 先にクリア（陣地回復優先の大きな縦蹴り）を検討する。役割固定ではなく、mentalが低い
+  // （慎重・堅実な）選手ほど自分で繋ごうとせずクリアを選びやすい設計にする。
+  const own = ownGoal(player.team, config);
+  const distToOwnGoal = distance(player.pos, own);
+  if (distToOwnGoal <= config.ai.clear.dangerDistance) {
+    const oppTeam = state.teams[opposite(player.team)];
+    const nearestOpp = nearestPosTo(player.pos, oppTeam.players);
+    const pressureDist = nearestOpp !== undefined ? distance(player.pos, nearestOpp) : Infinity;
+    if (pressureDist <= config.ai.clear.pressureDistance) {
+      // 敵がtackleDistanceへ迫るほど「もうすぐ奪われる」切迫度が上がり、クリアを選ぶ確率を
+      // 底上げする。pressureDistance到達時点ではurgency=0（通常の base/mental差のみ）、
+      // tackleDistanceまで詰められるとurgency=1（ほぼ確実にクリアし、タックルで奪われる前に
+      // 逃がす）。タックル自体はクリア判定の後・同ターン内で解決されるため、ここで先に
+      // 蹴り出せればそのターンのタックル判定自体が発生しない（ball.statusがFreeになるため）。
+      const urgency = Math.max(
+        0,
+        Math.min(
+          1,
+          (config.ai.clear.pressureDistance - pressureDist) /
+            (config.ai.clear.pressureDistance - config.ai.tackleDistance)
+        )
+      );
+      const clearChance = Math.max(
+        0,
+        Math.min(
+          1,
+          config.ai.clear.chanceBase +
+            (player.params.mental - 0.5) * config.ai.clear.chanceMentalSpread +
+            urgency * config.ai.clear.urgencyWeight
+        )
+      );
+      if (chance(state, clearChance)) {
+        player.state = "Clearing";
+        const away = normalize(sub(player.pos, own));
+        const dir = applyAimError(away, config.ai.clear.accuracy, state, config);
+        kickBall(ball, dir, config.ai.clear.speed, player.id);
+        player.vel = { x: 0, y: 0 };
+        return;
+      }
+    }
+  }
+
   // ボールを受け取った直後の数ターンはパス判断自体を行わず、必ずドリブル継続にする。
   // これがないと毎フレーム独立にパス判定をやり直すため、受け取った1フレーム目で
   // いきなりパスしてしまい、ドリブルではなく「自分にパスして自分で拾う」ような
