@@ -31,7 +31,7 @@ type TeamSide = "A" | "B";
 type Role = "FW" | "MF" | "DF";   // GK は第一ステップでは扱わない
 type PlayerActionState =
   | "Idle" | "BallTracking" | "Possession" | "Passing"
-  | "Receiving" | "Shooting" | "Marking" | "MovingToSpace";
+  | "Receiving" | "Shooting" | "Clearing" | "Marking" | "MovingToSpace";
 ```
 
 ### PlayerParams
@@ -112,6 +112,7 @@ interface MatchResult { scoreA: number; scoreB: number; winner: TeamSide | "Draw
 | `ball` | `radius` / `friction` / `stopThreshold` / `maxSpeed` | `friction` は**毎秒の速度保持率**。適用は `friction^dt` |
 | `ai` | `ballControlDistance` / `trapDistance` / `trapMaxBallSpeed` / `tackleDistance` / `passDistance` / `shootDistance` / `shootProbability` / `visionDistance` / `passSpeed` / `shootSpeed` / `aimErrorMaxDeg` / `moveStopThreshold` / `passSpeedDistanceFactor` / `markedRadiusFactor` / `positioning` | 各種判定距離・確率。`visionDistance` は選手が味方/敵/ボールを認識できる距離（視野角は `PlayerParams.vision`）、`passSpeed`/`shootSpeed` はキックの基準初速、`aimErrorMaxDeg` は `passAccuracy`/`shootPower` が0のときの最大キック角度誤差、`moveStopThreshold` は `moveToward` の到達判定距離、`passSpeedDistanceFactor` はパス距離1mあたりの初速上乗せ量、`markedRadiusFactor` はパス候補のマーク済み判定距離（`tackleDistance` の倍率）、`positioning` は非保持時の力の合成モデルの重み（下記） |
 | `ai.positioning` | `ballPullWeight` / `repulsionWeight` / `minSpacing` / `coverWeight` / `pressWeight` / `pressDistance` / `surroundRadius` / `pressChanceBase` / `pressChanceSpread` / `receivingDistanceFactor` / `markerAvoidRangeFactor` / `markerAvoidStepDistance` | `computeTargetPosition`（`src/game/player.ts`、マイルストーンH）が使う重み。`ballPullWeight` は home からボールへ追従する上限距離の係数（`distance(home, ownGoal)` に掛ける）、`repulsionWeight`/`minSpacing` は味方同士が近すぎるときの反発、`coverWeight` はボール-自ゴール線への吸着ブレンド率、`pressWeight`/`pressDistance` は敵ボール保持者への詰め寄り（`mental` と掛け合わせる）。`surroundRadius` は複数人でプレスする際に敵保持者を囲むリングの半径（`computeApproachPoint`）、`pressChanceBase`/`pressChanceSpread` は毎ターン実際に詰め寄るかどうかを `mental` に応じた確率で決めるための基準値と振れ幅、`receivingDistanceFactor`/`markerAvoidRangeFactor`/`markerAvoidStepDistance` は非保持時の受け手ポジション計算（ボールから攻撃ゴール方向への距離・敵マーカー回避判定範囲・回避時の横ずれ距離） |
+| `ai.clear` | `dangerDistance` / `pressureDistance` / `chanceBase` / `chanceMentalSpread` / `urgencyWeight` / `speed` / `accuracy` | 自陣ゴール前で詰められたときの「クリア」（`decidePossessionAction`、パス判定より先に評価）。自ゴールから `dangerDistance` 以内かつ敵が `pressureDistance` 以内にいる場合のみ検討し、選ぶ確率は `chanceBase + (mental-0.5)×chanceMentalSpread` に、敵が `tackleDistance` まで詰めた切迫度（urgency、0〜1）× `urgencyWeight` を上乗せする。方向は自ゴールから離れる向き、精度は `accuracy`（狙いより飛距離優先で低め固定） |
 | `team` | `roleParams` / `formation` / `tactics` / `names` | 役割別パラメータ・定位置・戦術・チーム名 |
 | `match` | `turnsPerHalf` / `goalScoredTurns` / `restartSetupTurns` / `kickoffTurns` | ハーフのターン数と各フェーズの滞在ターン数 |
 | `physics` | `dt` | 1ターンの秒数 |

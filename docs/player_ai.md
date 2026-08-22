@@ -26,7 +26,7 @@
 
 ## 2. ボール保持中：`decidePossessionAction`
 
-優先順位は **シュート → パス → ドリブル継続** の順で、最初に成立した行動をとる。
+優先順位は **シュート → クリア → パス → ドリブル継続** の順で、最初に成立した行動をとる。
 
 1. **シュート判定**
    - 自分の位置から攻撃ゴール（`x=0, y=±length/2`）までの距離が `config.ai.shootDistance`（既定20m）以内なら検討する。
@@ -34,13 +34,19 @@
    - 実行時: `state = "Shooting"`、方向はゴール方向に `applyAimError`（`shootPower` が低いほど角度がブレる）を適用、初速は `shootSpeed × shootPower`。
    - **角度・GKの遮蔽は考慮しない**（距離のみ）。仕様書は角度判定を必須としているが未実装（既知のギャップ）。
 
-2. **パス判定**（シュートが成立しなかった場合）
+2. **クリア判定**（シュートが成立しなかった場合、2026-08-22導入）
+   - 自ゴールから `config.ai.clear.dangerDistance`（既定18m）以内、かつ敵が `pressureDistance`（既定5m）以内にいる（＝ゴール前で押し込まれている）ときのみ検討する。役割固定ではなく、`mental` が低い（慎重・堅実な）選手ほど選びやすい。
+   - 選択確率 = `chanceBase + (mental-0.5)×chanceMentalSpread` に、敵が `tackleDistance` まで詰めてきた切迫度（urgency、0〜1）× `urgencyWeight` を上乗せ（0〜1にクランプ）。奪われる寸前ほどほぼ確実にクリアする。
+   - 実行時: `state = "Clearing"`、方向は自ゴールから離れる向きに `applyAimError`（`accuracy` は狙いより飛距離優先で低め固定）、初速は `clear.speed`。
+   - パス/ドリブルより先に評価するため、成立すればパス判定（3.）は行われない。
+
+3. **パス判定**（シュート・クリアが成立しなかった場合）
    - `selectPassReceiver` で受け手を選ぶ:
      - 候補: 同チームの他選手のうち、距離が `passDistance`（既定15m）以内の全員（**視野角によるフィルタはしない** — キャリアーは周囲を見渡せる想定のため）。
      - スコアリング: 相手選手が `tackleDistance × markedRadiusFactor`（既定2倍）以内にいる候補は大きく減点（-1000）、それ以外はゴールに近いほど高評価。最もスコアの高い候補を選ぶ。
    - 受け手がいれば: `state = "Passing"`、方向は受け手へ向けて `applyAimError`（`passAccuracy` が低いほどブレる）、初速は `passSpeed + 距離×passSpeedDistanceFactor`（既定0.3、遠いほど強く蹴る、`ball.maxSpeed` で頭打ち）。
 
-3. **ドリブル継続**（シュートもパスも成立しなかった場合）
+4. **ドリブル継続**（シュート・クリア・パスいずれも成立しなかった場合）
    - `state = "Possession"` のまま、ゴール方向へ `moveToward`。ボールは保持者に追従するので、これがそのまま「ドリブル」になる。
 
 ---
