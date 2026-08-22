@@ -1,6 +1,7 @@
-import type { Renderer, GameConfig, Player, Ball, GameState, Vec2 } from "../types";
+import type { Renderer, GameConfig, Player, Ball, GameState, Vec2, TeamSide } from "../types";
 import { currentScore } from "../game/match";
 import { facingDirection } from "../game/player";
+import { offsideLineY } from "../game/offside";
 
 /** 論理サイズ(m)をピクセルへ変換する係数。index.html の canvas サイズ(600x400)は初期値の目安で、実際は init() が上書きする。 */
 const SCALE = 11;
@@ -127,6 +128,32 @@ export class CanvasRenderer implements Renderer {
     ctx.fillStyle = TEAM_COLOR.B;
     ctx.textAlign = "right";
     ctx.fillText("← B", topLeft.x + w - 12, y);
+  }
+
+  /**
+   * A・Bそれぞれの攻撃方向から見たオフサイドライン（`offsideLineY`、相手最終ラインとボールの
+   * うち攻撃方向に進んでいる方）を、攻撃側チームカラーの破線で描画する（ユーザー要望）。
+   * ゲーム座標の y = 一定は `toCanvas` の変換により画面上は縦線になる。
+   */
+  drawOffsideLines(state: GameState, config: GameConfig): void {
+    const { ctx, canvas } = this;
+
+    for (const side of ["A", "B"] as TeamSide[]) {
+      const defendingSide: TeamSide = side === "A" ? "B" : "A";
+      const lineY = offsideLineY(side, state.teams[defendingSide], state.ball.pos, config);
+      const x = this.toCanvas({ x: 0, y: lineY }).x;
+
+      ctx.save();
+      ctx.strokeStyle = TEAM_COLOR[side];
+      ctx.globalAlpha = 0.6;
+      ctx.lineWidth = 3;
+      ctx.setLineDash([6, 5]);
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, canvas.height);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   /** 選手をチーム色の円で描画し、円の上に役割（FW/MF/DF）をラベル表示する。`setDebugVision(true)` 中は視野範囲も重ね描きする。 */

@@ -12,6 +12,8 @@ export class NullRenderer implements Renderer {
 
   drawPitch(config: GameConfig): void {}
 
+  drawOffsideLines(state: GameState, config: GameConfig): void {}
+
   drawPlayers(players: Player[]): void {}
 
   drawBall(ball: Ball): void {}

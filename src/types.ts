@@ -588,6 +588,7 @@ export interface Renderer {
   init(): void;
   clear(): void;
   drawPitch(config: GameConfig): void;
+  drawOffsideLines(state: GameState, config: GameConfig): void;
   drawPlayers(players: Player[]): void;
   drawBall(ball: Ball): void;
   drawHud(state: GameState): void;

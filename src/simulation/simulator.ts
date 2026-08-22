@@ -74,6 +74,7 @@ export class Simulator {
 
     this.renderer.clear();
     this.renderer.drawPitch(config);
+    this.renderer.drawOffsideLines(state, config);
     this.renderer.drawPlayers(players);
     this.renderer.drawBall(state.ball);
     this.renderer.drawHud(state);
