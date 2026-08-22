@@ -229,12 +229,24 @@ export interface GameConfig {
     /** vision の偏差（vision/180を基準に0.5からの差）1あたりドリブル確率をどれだけ下げるか（視野が広いほど受け手を見つけやすい）。 */
     dribbleChanceVisionSpread: number;
     /**
-     * selectPassReceiver が選んだ受け手が実際にオフサイドの場合、dribbleChance に加算する量。
-     * offside.avoidanceEnabled が false のときは評価自体を行わないため無効。縦パス一本槍を
-     * 避け、リスキーな受け手へのパスの代わりにドリブル継続を選びやすくする狙い
-     * （TODO.md マイルストーンK/L: オフサイド反則有効化時の得点崩壊対策）。
+     * selectPassReceiver が選んだ受け手が実際にオフサイドの場合、「そもそも試みるか」を
+     * dribbleChance（パスかドリブルかの一般的な好み）とは独立に判定する確率
+     * （mental=0.5のときの基準値）。offside.avoidanceEnabled が false のときは評価自体を
+     * 行わないため無効。試みないと判定されたら、その受け手は諦めて通常のドリブル分岐へ
+     * フォールバックする（TODO.md マイルストーンK/L: オフサイド反則有効化時の得点崩壊対策）。
+     * 以前は dribbleChance に単純加算する設計だったが、他の項と合算した結果がほぼ全ロールで
+     * 1.0近くに飽和し、mentalの差がほとんど効かない「実質0か1か」の挙動になっていた
+     * （ユーザー指摘・デバッグ、2026-08-16）。独立の確率にすることで、mentalが高い
+     * （積極的な）選手ほど試みる確率が上がり、成功することも反則になることもある、という
+     * 滑らかな個性差を作る。
      */
-    offsideRiskDribbleBoost: number;
+    offsideRiskAttemptChanceBase: number;
+    /**
+     * mental の偏差1あたり offsideRiskAttemptChanceBase をどれだけ上げるか。積極的な選手ほど
+     * オフサイドのリスクを取ってでも縦パスを試みるという個性差を、役割分岐ではなくmentalの
+     * 値にそのまま反映する。
+     */
+    offsideRiskAttemptChanceMentalSpread: number;
     /**
      * 孤立時ドリブルでマークされている（markingPressure > 0）ときの基準の回避ブレンド率
      * （0〜1、mental=0.5のときの値）。ゴール方向とマーカーから離れる方向を
@@ -438,8 +450,24 @@ export interface GameConfig {
       kpp: {
         /** 前進度（0〜1、maxDistanceに対する比率）への報酬の重み。大きいほど積極的に前へ出る。 */
         forwardWeight: number;
-        /** オフサイドラインを超過した距離[m]あたりのペナルティの重み。 */
+        /**
+         * オフサイドライン超過量（残り距離で正規化した比率）あたりのペナルティの重み。
+         * `computeTargetPosition`（受け手がどこへ動くか、`selectReceivingDistance`）が使う。
+         * 弱すぎると団子化しないが強すぎると団子化する非線形な崩壊があるため、balance-check
+         * で確認しながら弱めに調整する（TODO_ARCHIVE.mdマイルストーンO）。
+         */
         offsideOvershootWeight: number;
+        /**
+         * オフサイドライン超過量（残り距離で正規化した比率）あたりのペナルティの重み。
+         * `selectPassReceiver`（誰にパスするか）が使う。`offsideOvershootWeight` と同じ重みを
+         * 共有していたところ、`computeTargetPosition` 側の団子化回避に必要な弱さ（0.5程度）
+         * では「同程度の位置ならオンサイドを優先する」という受け手選定の基本原則すら
+         * 守れないことが判明し分離した（前進度の報酬がオフサイド超過ペナルティを上回って
+         * しまい、オフサイド気味の候補を積極的に選んでしまっていた。ユーザー指摘・デバッグ、
+         * 2026-08-16）。受け手選定は候補間の相対比較のみに使われ団子化のリスクがないため、
+         * `offsideOvershootWeight` より強めの値にできる。
+         */
+        receiverOvershootWeight: number;
         /**
          * 相手DF最速到達者に対する到達時間の遅れ[秒]（`arrivalSafetyMarginSeconds`超過分）
          * あたりのペナルティの重み。`computeTargetPosition`（自分がそこへ動けるか）にのみ

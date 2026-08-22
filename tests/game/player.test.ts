@@ -81,7 +81,16 @@ describe("decideAction: possession", () => {
     expect(state.ball.lastKickerId).toBe(passer.id);
   });
 
-  it("prefers an onside teammate over an offside one (方式E: 統一スコアリング)", () => {
+  it("may still pick a more-advanced offside candidate over a less-advanced onside one (方式E: 統一スコアリング)", () => {
+    // forwardWeight(1) > offside.kpp.receiverOvershootWeight(既定0.5) のため、スコア関数の
+    // 構造上「前進度の伸び」は「オフサイド超過ペナルティの伸び」を常に上回る。つまり
+    // より前進した候補は多少オフサイドでも選ばれうる。当初この関数に「同程度の位置なら
+    // 必ずオンサイドを優先する」という強い保証を持たせようとしたが、保証に必要な重み
+    // （1.33超）では前進が止まりチーム全体の得点が崩壊する非線形な閾値が別途見つかった。
+    // 「多少オフサイド気味の候補を選んでしまう」のは選手の判断ミスとして許容し、実際に
+    // そのリスキーな候補へパスを試みるかどうかは offsideRiskAttemptChance（mental駆動）側の
+    // 確率判定に委ねる、という設計に転換した（ユーザー判断、2026-08-16）。このテストは
+    // その転換後の意図した挙動を回帰確認する。
     const config = loadConfig();
     config.ai.offside.avoidanceEnabled = true; // デフォルトは無効化しているため個別テストで有効化する
     config.ai.shootProbability = 0;
@@ -89,6 +98,9 @@ describe("decideAction: possession", () => {
     config.ai.dribbleChanceBase = 0;
     config.ai.dribbleChanceMentalSpread = 0;
     config.ai.dribbleChanceVisionSpread = 0;
+    // このテストは selectPassReceiver の候補比較だけを見たいので、試みる確率を1に固定する。
+    config.ai.offsideRiskAttemptChanceBase = 1;
+    config.ai.offsideRiskAttemptChanceMentalSpread = 0;
     const state = createInitialState(config);
     const passer = state.teams.A.players.find((p) => p.role === "MF")!;
     const onsideReceiver = state.teams.A.players.find((p) => p.role === "DF")!;
@@ -106,10 +118,42 @@ describe("decideAction: possession", () => {
 
     decideAction(passer, state, config);
 
-    // オフサイド候補は前進度の報酬より超過ペナルティが上回るため、オンサイドの候補が選ばれる
-    // （= フラグが立たない）。marked/distToGoal だけの旧式スコアでは反映されなかった判断。
     expect(passer.state).toBe("Passing");
-    expect(state.ball.offsideOffenderId).toBeNull();
+    expect(state.ball.vel.y).toBeGreaterThan(0); // offsideReceiver(y=10)へのキック
+  });
+
+  it("prefers an onside candidate over an offside one that is not clearly more advanced", () => {
+    // オフサイド候補の前進度がオンサイド候補を明確に上回らない（横に開いている分だけ
+    // ゴールから遠い）場合は、超過ペナルティの分だけオンサイドの候補が選ばれる
+    // （スコア関数のoffsideOvershoot項が無意味化していないことの回帰確認）。
+    const config = loadConfig();
+    config.ai.offside.avoidanceEnabled = true;
+    config.ai.shootProbability = 0;
+    config.ai.dribbleChanceBase = 0;
+    config.ai.dribbleChanceMentalSpread = 0;
+    config.ai.dribbleChanceVisionSpread = 0;
+    config.ai.offsideRiskAttemptChanceBase = 1;
+    config.ai.offsideRiskAttemptChanceMentalSpread = 0;
+    const state = createInitialState(config);
+    const passer = state.teams.A.players.find((p) => p.role === "MF")!;
+    const onsideReceiver = state.teams.A.players.find((p) => p.role === "DF")!;
+    const offsideReceiver = state.teams.A.players.find((p) => p.role === "FW")!;
+
+    passer.pos = { x: 0, y: 0 };
+    onsideReceiver.pos = { x: 0, y: 4.9 }; // 相手最終ライン(y=4.5+許容0.5=5.0)の手前
+    offsideReceiver.pos = { x: 10, y: 5.5 }; // ラインをわずかに超過、かつ横に大きく開いている分ゴールへの正味の前進度は低い
+    for (const o of state.teams.B.players) o.pos = { x: 20, y: 4.5 };
+    state.ball.pos = { ...passer.pos };
+    state.ball.status = "Possessed";
+    state.ball.possessorId = passer.id;
+    state.ball.possessionTurns = 999;
+
+    decideAction(passer, state, config);
+
+    expect(passer.state).toBe("Passing");
+    // onsideReceiver(x=0)方向へのキック。aimErrorによる小さなジッターはあるが、
+    // offsideReceiver(x=10)方向ならvel.xはこの閾値よりずっと大きくなる。
+    expect(Math.abs(state.ball.vel.x)).toBeLessThan(1);
   });
 
   it("still passes to the sole candidate even when it is offside (ソフトペナルティであり完全排除ではない)", () => {
@@ -120,6 +164,11 @@ describe("decideAction: possession", () => {
     config.ai.dribbleChanceBase = 0;
     config.ai.dribbleChanceMentalSpread = 0;
     config.ai.dribbleChanceVisionSpread = 0;
+    // オフサイド濃厚な受け手が選ばれても「そもそも試みるか」を確率で諦めることがある
+    // （2026-08-16、mental駆動のリスク許容度）。ここでは selectPassReceiver がハード除外
+    // しないことだけを検証したいので、試みる確率を1に固定して確実にパスまで進める。
+    config.ai.offsideRiskAttemptChanceBase = 1;
+    config.ai.offsideRiskAttemptChanceMentalSpread = 0;
     const state = createInitialState(config);
     const passer = state.teams.A.players.find((p) => p.role === "MF")!;
     const offsideReceiver = state.teams.A.players.find((p) => p.role === "FW")!;

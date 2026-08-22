@@ -48,7 +48,16 @@ export const defaultConfig: GameConfig = {
     dribbleChanceBase: 0.15, // mental=0.5, vision=90度の選手が受け手ありでもドリブルを選ぶ基準確率
     dribbleChanceMentalSpread: 0.4, // mentalの偏差1あたりの確率変化幅（高いほど自分で運びたがる）
     dribbleChanceVisionSpread: 0.3, // vision(/180)の偏差1あたりの確率変化幅（広いほど受け手を見つけやすくパスを選びやすい）
-    offsideRiskDribbleBoost: 0.5, // 選んだ受け手がオフサイドの場合にdribbleChanceへ加算する量
+    // 選んだ受け手がオフサイドの場合に「そもそも試みるか」を判定する独立の確率。
+    // mentalが高い選手ほど試みやすく、低い選手ほど諦めてドリブルへ回る。base=0なので
+    // mental<=0.5の選手（DFなど）は実質0%（一切試みない）、mental=0.65(MF)で約2%、
+    // mental=0.85(FW)で約5%という滑らかな階調になる。20〜40シードのbalance-check
+    // （3つの独立したシード範囲で確認）で、反則有効時に平均得点3.8〜4.05/試合
+    // （無効時4.60）・反則3.6〜3.7件/試合という安定した中間点になることを確認した
+    // （2026-08-16）。base/spreadをさらに上げると反則が急増して得点が崩壊し、下げすぎると
+    // 反則が0件になり「AIが選択肢を放棄しているだけ」の不自然な状態に戻ってしまう。
+    offsideRiskAttemptChanceBase: 0, // mental=0.5のときの基準値
+    offsideRiskAttemptChanceMentalSpread: 0.15, // mentalの偏差1あたりどれだけ上げるか
     keepDribbleEvasionBase: 0.5, // マークされている孤立時ドリブルの回避方向ブレンド率の基準値
     keepDribbleEvasionMentalSpread: 0.6, // mentalの偏差1あたりの変化幅（高いほど回避せずゴール優先）
     keepDribbleEvasionTechniqueSpread: 0.4, // techniqueの偏差1あたりの変化幅（高いほど回避に頼らずゴール優先＝打開力）
@@ -114,12 +123,18 @@ export const defaultConfig: GameConfig = {
       // offsideOvershootWeight=0.5（正規化後の値）の組み合わせで20シードのbalance-check
       // 平均得点5.10（無効時6.05に近い）まで回復したため、ステップ1を正式に有効化する。
       avoidanceEnabled: true,
-      // ステップ2（反則としてのターンオーバー処理、Ball.offsideOffenderId/handleOffside）は
-      // 引き続き無効。上記の正規化後もavoidanceEnabled+enforcementEnabledを両方有効にすると
-      // 実行されたパスの過半数が依然オフサイドと判定され、平均得点が2.55まで下がることを
-      // 確認済み（2026-08-16）。反則化には受け手ポジショニングのさらなる改善が必要。
-      // 詳細: specification/features_offside.md
-      enforcementEnabled: false,
+      // ステップ2（反則としてのターンオーバー処理、Ball.offsideOffenderId/handleOffside）。
+      // 「反則率を下げれば安全」という前提で offsideOvershootWeight/forwardReachFraction を
+      // 何度調整しても、団子化と自然な反則率の高止まりの間に許容できる中間点が見つからない
+      // という状態が続いていた（TODO_ARCHIVE.mdマイルストーンJ〜O）。2026-08-16、方針を
+      // 「反則を限りなくゼロに近づける」から「mentalが高い（積極的な）選手だけがオフサイド
+      // 覚悟で裏へ抜けるパスを低頻度で試み、時には成功し時には反則になる」という許容に
+      // 転換した（ユーザー判断）。offsideRiskAttemptChanceBase/MentalSpread で「そもそも
+      // 試みるか」を選手のmentalに応じた独立の確率にし、selectPassReceiver自体はオンサイドを
+      // 絶対優先しない（多少オフサイド気味の候補を選ぶのは「判断ミス」として許容）設計に
+      // 変えたところ、複数シード範囲のbalance-checkで平均得点3.8〜4.05/試合（無効時4.60）・
+      // 反則3.6〜3.7件/試合という安定した中間点が得られたため、正式に有効化する。
+      enforcementEnabled: true,
       lineToleranceMeters: 0.5, // 同一ラインとみなす許容誤差 [m]
       // 受け手の前進上限 = distance(ball, goal) * この係数。0.3→0.7に拡大（2026-08-16、
       // overshoot正規化後の再チューニング。0.3のままだと前進報酬の上限が低すぎ、正規化後も
@@ -133,10 +148,19 @@ export const defaultConfig: GameConfig = {
       // 概ね同スケールで比較できる。
       kpp: {
         forwardWeight: 1, // 前進度（0〜1）への報酬
-        // オフサイドライン超過量（残り距離に対する比率）へのペナルティ。2→0.5に変更
-        // （2026-08-16、overshootの正規化に伴う再チューニング。旧2はメートル単位の
-        // 超過量にかけていた値で、正規化後にそのまま使うと過剰に強すぎる）。
+        // computeTargetPosition（受け手の位置取り）用。オフサイドライン超過量（残り距離に
+        // 対する比率）へのペナルティ。2→0.5に変更（2026-08-16、overshootの正規化に伴う
+        // 再チューニング。旧2はメートル単位の超過量にかけていた値で、正規化後にそのまま
+        // 使うと団子化する。弱めに保つことで団子化を避ける）。
         offsideOvershootWeight: 0.5,
+        // selectPassReceiver（誰にパスするか）用。当初 offsideOvershootWeight とは別に強めの
+        // 値（2）を試したが、重みを1.0→1.25の間で非線形にチーム全体の前進が止まる崩壊
+        // （団子化と同系統の現象）が再発した。「同程度の位置なら必ずオンサイドを選ぶ」という
+        // 強い保証は追求せず、多少オフサイド気味の候補を選んでしまうことは「選手の判断ミス」
+        // として許容する方針に転換（ユーザー判断、2026-08-16）。実際にそのリスキーな候補へ
+        // パスを試みるかどうかは offsideRiskAttemptChance（mental駆動）側で制御するため、
+        // ここは offsideOvershootWeight と同じ値に戻す。
+        receiverOvershootWeight: 0.5,
         arrivalDeficitWeight: 1, // 到達時間の遅れ1秒あたりのペナルティ（computeTargetPositionのみ）
         markingWeight: 1, // マーク（敵接近）1mあたりのペナルティ
       },

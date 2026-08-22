@@ -145,14 +145,28 @@ function dribbleSpeedFactor(player: Player, config: GameConfig): number {
  * 改善しても自然なオフサイド率が下がりきらなかった。この断絶を解消するのが狙い。
  *
  *   - forwardWeight: ボールからゴールまでの残り距離に対する前進度（0〜1）への報酬
- *   - offsideOvershootWeight: オフサイドライン超過量を残り距離(remaining)で正規化した比率への
- *     ペナルティ（advancedと同じ無次元スケール）。旧実装ではメートル単位のまま加減算しており、
+ *   - overshootWeight: オフサイドライン超過量を残り距離(remaining)で正規化した比率への
+ *     ペナルティ（advancedと同じ無次元スケール）。呼び出し側ごとに異なる重みを渡す
+ *     （`config.ai.offside.kpp.offsideOvershootWeight`/`receiverOvershootWeight`。
+ *     2026-08-16、下記の注意点により分離）。旧実装ではメートル単位のまま加減算しており、
  *     forwardReachFractionで前進報酬の上限が低く抑えられている状況だと小さい重みでも前進報酬を
- *     即座に打ち消す非線形崩壊を起こしていた（2026-08-16に発見・修正、TODO_ARCHIVE.mdマイルストーンO）
+ *     即座に打ち消す非線形崩壊を起こしていた（2026-08-16に発見・修正、TODO_ARCHIVE.mdマイルストーンO）。
+ *     ただし修正後も両呼び出し側で同じ弱い重み（0.5）を共有すると、`selectPassReceiver`側で
+ *     「同程度の位置ならオンサイドを優先する」という基本原則すら守れなくなることが判明した
+ *     （前進度の報酬がオフサイド超過ペナルティを上回ってしまう）。`computeTargetPosition`側は
+ *     団子化を避けるため弱い重みが必要、`selectPassReceiver`側はオンサイド優先を守るため
+ *     強めの重みが必要、という要求が逆方向なため、呼び出し側で重みを分離した
  *   - markingWeight: 最も近い敵選手が `tackleDistance * markedRadiusFactor` より近づいた分[m]
  *     へのペナルティ（旧: binaryな `marked` フラグを連続値化したもの）
  */
-function scoreReceivingSpot(pos: Vec2, side: TeamSide, ballPos: Vec2, oppTeam: Team, config: GameConfig): number {
+function scoreReceivingSpot(
+  pos: Vec2,
+  side: TeamSide,
+  ballPos: Vec2,
+  oppTeam: Team,
+  config: GameConfig,
+  overshootWeight: number
+): number {
   const { kpp, lineToleranceMeters } = config.ai.offside;
   const goal = attackGoal(side, config);
 
@@ -168,7 +182,7 @@ function scoreReceivingSpot(pos: Vec2, side: TeamSide, ballPos: Vec2, oppTeam: T
   const markingRange = config.ai.tackleDistance * config.ai.markedRadiusFactor;
   const markingPressure = Math.max(0, markingRange - nearestOppDist);
 
-  return kpp.forwardWeight * advanced - kpp.offsideOvershootWeight * overshoot - kpp.markingWeight * markingPressure;
+  return kpp.forwardWeight * advanced - overshootWeight * overshoot - kpp.markingWeight * markingPressure;
 }
 
 /**
@@ -204,7 +218,14 @@ function selectPassReceiver(player: Player, state: GameState, config: GameConfig
     // enabled時は方式Eの統一スコアを使う。無効時は既存の marked/distToGoal 式のままにし、
     // デフォルトのゲームバランス（オフサイド機能オフ時の挙動）を変えない。
     const score = config.ai.offside.avoidanceEnabled
-      ? scoreReceivingSpot(candidate.pos, player.team, player.pos, oppTeam, config)
+      ? scoreReceivingSpot(
+          candidate.pos,
+          player.team,
+          player.pos,
+          oppTeam,
+          config,
+          config.ai.offside.kpp.receiverOvershootWeight
+        )
       : legacyReceiverScore(candidate.pos, goal, oppTeam, config);
     if (score > bestScore) {
       bestScore = score;
@@ -243,21 +264,35 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
     0,
     config.ai.minHoldTurnsBase + (player.params.mental - 0.5) * config.ai.minHoldTurnsMentalSpread
   );
-  const receiver = ball.possessionTurns < minHoldTurns ? undefined : selectPassReceiver(player, state, config);
+  let receiver = ball.possessionTurns < minHoldTurns ? undefined : selectPassReceiver(player, state, config);
+  // isOffside は複数箇所で使う共通の判定なので、相手チーム参照ごと1回だけ計算する
+  // （2026-08-16リファクタ: 以前は用途ごとに state.teams[opposite(player.team)] と
+  // isOffside呼び出しを重複させていた）。
+  const oppTeam = state.teams[opposite(player.team)];
+  let receiverIsOffside = receiver !== undefined && isOffside(receiver.pos, player.team, oppTeam, player.pos, config);
+
+  if (receiver !== undefined && config.ai.offside.avoidanceEnabled && receiverIsOffside) {
+    // 選ばれた受け手がオフサイド濃厚な場合、「そもそも試みるかどうか」を dribbleChance
+    // （パスかドリブルかの一般的な好み）とは独立の確率で先に判定する。mentalが高い
+    // （積極的な）選手ほど試みる確率が上がり、成功することも反則になることもある、という
+    // 個性の差を作る。以前は dribbleChance に単純加算していたが、他の項と合算した結果が
+    // ほぼ全ロールで1.0近くに飽和してしまい、mentalの差がほとんど効かない「実質0か1か」の
+    // 挙動になっていた（ユーザー指摘・デバッグ、2026-08-16）。
+    const riskAttemptChance = Math.max(
+      0,
+      Math.min(
+        1,
+        config.ai.offsideRiskAttemptChanceBase + (player.params.mental - 0.5) * config.ai.offsideRiskAttemptChanceMentalSpread
+      )
+    );
+    if (!chance(state, riskAttemptChance)) {
+      // 諦めて安全な選択肢（ドリブル継続、または他の受け手がいればそちら）へフォールバックする。
+      receiver = undefined;
+      receiverIsOffside = false;
+    }
+  }
+
   if (receiver !== undefined) {
-    // isOffside は avoidanceEnabled/enforcementEnabled のどちらの用途にも使う共通の判定なので、
-    // 相手チーム参照ごと1回だけ計算する（2026-08-16リファクタ: 以前は用途ごとに
-    // state.teams[opposite(player.team)] とisOffside呼び出しを重複させていた）。
-    const oppTeam = state.teams[opposite(player.team)];
-    const receiverIsOffside = isOffside(receiver.pos, player.team, oppTeam, player.pos, config);
-
-    // 選ばれた受け手がオフサイド濃厚な場合、縦パス一本槍にせず、あえてドリブル継続を
-    // 選ぶ確率を引き上げる。オフサイド判定を有効化した際の「自然発生率の高さに攻撃側の
-    // 代替手段が耐えられず得点がほぼ0まで崩壊する」問題（TODO.mdマイルストーンK/L）への
-    // 対策の第一歩。avoidanceEnabled が無効なときは意味がないため何も変えず、デフォルトの
-    // ゲームバランスに影響しない（既存の同種ガードと同じ方針）。
-    const receiverIsOffsideRisk = config.ai.offside.avoidanceEnabled && receiverIsOffside;
-
     // 受け手がいても、役割ではなく mental/vision に応じた確率であえてドリブルを選ぶことがある。
     // mental が高いほど自分で運びたがり、vision が広いほど受け手を見つけやすくパスを選びやすい。
     const dribbleChance = Math.max(
@@ -266,8 +301,7 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
         1,
         config.ai.dribbleChanceBase +
           (player.params.mental - 0.5) * config.ai.dribbleChanceMentalSpread -
-          (player.params.vision / 180 - 0.5) * config.ai.dribbleChanceVisionSpread +
-          (receiverIsOffsideRisk ? config.ai.offsideRiskDribbleBoost : 0)
+          (player.params.vision / 180 - 0.5) * config.ai.dribbleChanceVisionSpread
       )
     );
     if (!chance(state, dribbleChance)) {
@@ -306,8 +340,8 @@ function decidePossessionAction(player: Player, state: GameState, config: GameCo
   // 高い選手ほど強引にゴール方向を維持し、低い選手ほどキープを優先する
   // （ユーザー指摘、2026-08-09: 役割固定ではなくパラメータで選ばせたい）。technique は
   // カルチョビットのテクニック相当で、マークをかわしつつ前進を維持する「打開力」の
-  // 代用として使う（オフサイド反則有効化時の攻撃代替手段強化の一環）。
-  const oppTeam = state.teams[opposite(player.team)];
+  // 代用として使う（オフサイド反則有効化時の攻撃代替手段強化の一環）。oppTeam は関数冒頭
+  // （受け手のオフサイド判定用）で既に計算済みのものを再利用する。
   const nearestOpp = nearestPosTo(player.pos, oppTeam.players);
   let dribbleTarget = goal;
   if (nearestOpp !== undefined) {
@@ -374,7 +408,8 @@ function selectReceivingDistance(
     const arrivalDeficit = Math.max(0, myTime - oppTime - arrivalSafetyMarginSeconds);
 
     const score =
-      scoreReceivingSpot(candidate, side, ballPos, defendingTeam, config) - kpp.arrivalDeficitWeight * arrivalDeficit;
+      scoreReceivingSpot(candidate, side, ballPos, defendingTeam, config, kpp.offsideOvershootWeight) -
+      kpp.arrivalDeficitWeight * arrivalDeficit;
 
     if (score > bestScore) {
       bestScore = score;

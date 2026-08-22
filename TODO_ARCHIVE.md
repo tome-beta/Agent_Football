@@ -215,6 +215,17 @@
 - [x] `enforcementEnabled` を正規化後の値で改めて再検証 — `avoidanceEnabled`+`enforcementEnabled` を両方有効にした状態で `forwardReachFraction ∈ {0.4,0.5,0.6,0.7}` × `offsideOvershootWeight ∈ {0.5,1,1.5,2}` をグリッドサーチした。反則率（実行されたパスのうちオフサイド判定された割合）を50%台から28%以下まで下げようとすると平均得点が2.1前後→0.2〜0.4まで急落する団子化が再現し、反則率・得点を両立するパラメータは見つからなかった。**「単位不一致バグのせいで見えていなかっただけ」ではなく、正規化後も同じ構造的限界（マイルストーンJ/Lの「弱めると反則率が高いまま、強めると団子化」）が残っている**ことを確認したため、`enforcementEnabled` は引き続き `false` のまま維持する
 - [x] テスト修正 `tests/game/player.test.ts`（`offsideOffenderId` を `enforcementEnabled` 前提のフラグとして扱うよう1件修正）・`tests/simulation/config.test.ts`（`avoidanceEnabled` の既定値変更に伴う mutation isolation テストの期待値を反転）
 
+### マイルストーンP: オフサイド反則化（ステップ2）を正式に有効化 ✅完了（2026-08-16、マイルストーンO当日の続き）
+
+マイルストーンOで「反則率を下げようとすると団子化で崩壊、下げないと反則率が高止まり」という中間点のなさを再確認したのを受け、「反則率をゼロに近づける」という前提そのものを見直した。ユーザー方針: 「積極性をもたせたパラメータをもつ選手なら、オフサイドの可能性があっても裏に走る動きを試みる。オフサイドには引っかかることもあるけれど、成功するときもある、という塩梅にしたい。0か1は避けたい」。
+
+- [x] `offsideRiskDribbleBoost=1.0` を試したところ反則が完全にゼロになったが、内訳を計測すると受け手候補選択の85.9%が実はオフサイド濃厚と判明。この設定は「ルールの下で賢く立ち回る」のではなく「ほぼ毎回縦パスの選択肢自体を放棄している」だけだとユーザーが指摘し不採用。あわせて、過去マイルストーンMの「リスキーなパスを0まで減らしても崩壊が解消しなかった」という結論は、当時まだ`avoidanceEnabled`側の単位不一致バグ（マイルストーンOで発見・修正）を抱えたまま検証していたための誤った結論だったことも判明した
+- [x] `offsideRiskDribbleBoost`（`dribbleChance`への単純加算）を廃止し、`offsideRiskAttemptChanceBase`/`MentalSpread`（mental駆動の独立した確率で「そもそも試みるか」を先に判定し、試みない場合はその受け手を諦めて通常のドリブル分岐へフォールバックする二段階の意思決定）に置き換えた `player`（`decidePossessionAction`）。旧設計は他の確率項と合算した結果がほぼ全ロールで1.0近くに飽和し、mentalの差がほとんど効かない「実質0か1か」の挙動になっていた
+- [x] 調査の過程で `selectPassReceiver`（誰にパスするか）と `computeTargetPosition`（どこへ動くか）が同じ弱い `offsideOvershootWeight`（0.5）を共有しており、「同程度の位置ならオンサイドを優先する」という受け手選定の基本原則すら守れていなかったと判明（前進度の報酬がオフサイド超過ペナルティを上回ってしまう）。`scoreReceivingSpot`に`overshootWeight`引数を追加し`receiverOvershootWeight`という別の重みを試したが、1.0→1.25の間でチーム全体の前進が止まる非線形崩壊が別途見つかり、「同程度の位置なら必ずオンサイド優先」という強い保証と「健全な得点」を両立する重みは存在しないと判断。ユーザー判断で「多少オフサイド気味の候補を選んでしまうのは選手の判断ミスとして許容する」方針に転換し、`receiverOvershootWeight`は`offsideOvershootWeight`と同じ0.5に戻した（関数のシグネチャ拡張自体は残し、将来また分離が必要になった場合に備える）
+- [x] `offsideRiskAttemptChanceBase=0`・`offsideRiskAttemptChanceMentalSpread=0.15`にチューニング — mental=0.4(DF)は実質0%（試みない）、mental=0.65(MF)で約2%、mental=0.85(FW)で約5%という滑らかな階調になる。3つの独立したシード範囲（各20〜40シード）のbalance-checkで、反則有効時に平均得点3.8〜4.05/試合（無効時4.60）・反則3.6〜3.7件/試合という安定した中間点になることを確認した
+- [x] `config.ai.offside.enforcementEnabled` を既定 `true` に変更。plain defaultsでの20シードbalance-checkは平均得点3.65、勝敗A12/B5/D3
+- [x] テスト修正 `tests/game/player.test.ts` — `offsideRiskDribbleBoost`関連のテストを`offsideRiskAttemptChance`に置き換え。「同程度の位置ならオンサイド優先」の主張は方針転換により成立しなくなったため、テスト名・アサーションを「前進度が明確に上回らない限りオンサイドを優先する」という実際の挙動に合わせて書き直した
+
 ### 選手同士の衝突処理 ✅ 完了（2026-08-16）
 
 第二ステップ以降で後回しにしていた「選手同士が重なることを防ぐ」仕様（`features_2_ball_pitch.md` §4.4）を実装。ブランチ: `feature/player-collision`。
