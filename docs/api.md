@@ -105,18 +105,86 @@ interface MatchResult { scoreA: number; scoreB: number; winner: TeamSide | "Draw
 ### GameConfig
 ゲームプレイ定数はすべてここに集約する（ロジック側でのハードコード禁止）。デフォルト値は `src/config/default.ts`。
 
+`ai` セクションはキーが多いため、用途別の小テーブルに分けている。全体の構造は `src/types.ts` の `GameConfig["ai"]` を参照。
+
 | セクション | キー | 意味 |
 |---|---|---|
 | `pitch` | `width` / `length` / `goalWidth` | ピッチ幅・長さ・ゴール総幅 [m]（判定は `abs(x) <= goalWidth/2`） |
 | `player` | `maxSpeed` / `radius` | 選手の速度上限・半径 |
 | `ball` | `radius` / `friction` / `stopThreshold` / `maxSpeed` | `friction` は**毎秒の速度保持率**。適用は `friction^dt` |
-| `ai` | `ballControlDistance` / `trapDistance` / `trapMaxBallSpeed` / `tackleDistance` / `passDistance` / `shootDistance` / `shootProbability` / `visionDistance` / `passSpeed` / `shootSpeed` / `aimErrorMaxDeg` / `moveStopThreshold` / `passSpeedDistanceFactor` / `markedRadiusFactor` / `positioning` | 各種判定距離・確率。`visionDistance` は選手が味方/敵/ボールを認識できる距離（視野角は `PlayerParams.vision`）、`passSpeed`/`shootSpeed` はキックの基準初速、`aimErrorMaxDeg` は `passAccuracy`/`shootPower` が0のときの最大キック角度誤差、`moveStopThreshold` は `moveToward` の到達判定距離、`passSpeedDistanceFactor` はパス距離1mあたりの初速上乗せ量、`markedRadiusFactor` はパス候補のマーク済み判定距離（`tackleDistance` の倍率）、`positioning` は非保持時の力の合成モデルの重み（下記） |
-| `ai.positioning` | `ballPullWeight` / `repulsionWeight` / `minSpacing` / `coverWeight` / `pressWeight` / `pressDistance` / `surroundRadius` / `pressChanceBase` / `pressChanceSpread` / `receivingDistanceFactor` / `markerAvoidRangeFactor` / `markerAvoidStepDistance` | `computeTargetPosition`（`src/game/player.ts`、マイルストーンH）が使う重み。`ballPullWeight` は home からボールへ追従する上限距離の係数（`distance(home, ownGoal)` に掛ける）、`repulsionWeight`/`minSpacing` は味方同士が近すぎるときの反発、`coverWeight` はボール-自ゴール線への吸着ブレンド率、`pressWeight`/`pressDistance` は敵ボール保持者への詰め寄り（`mental` と掛け合わせる）。`surroundRadius` は複数人でプレスする際に敵保持者を囲むリングの半径（`computeApproachPoint`）、`pressChanceBase`/`pressChanceSpread` は毎ターン実際に詰め寄るかどうかを `mental` に応じた確率で決めるための基準値と振れ幅、`receivingDistanceFactor`/`markerAvoidRangeFactor`/`markerAvoidStepDistance` は非保持時の受け手ポジション計算（ボールから攻撃ゴール方向への距離・敵マーカー回避判定範囲・回避時の横ずれ距離） |
-| `ai.clear` | `dangerDistance` / `pressureDistance` / `chanceBase` / `chanceMentalSpread` / `urgencyWeight` / `speed` / `accuracy` | 自陣ゴール前で詰められたときの「クリア」（`decidePossessionAction`、パス判定より先に評価）。自ゴールから `dangerDistance` 以内かつ敵が `pressureDistance` 以内にいる場合のみ検討し、選ぶ確率は `chanceBase + (mental-0.5)×chanceMentalSpread` に、敵が `tackleDistance` まで詰めた切迫度（urgency、0〜1）× `urgencyWeight` を上乗せする。方向は自ゴールから離れる向き、精度は `accuracy`（狙いより飛距離優先で低め固定） |
 | `team` | `roleParams` / `formation` / `tactics` / `names` | 役割別パラメータ・定位置・戦術・チーム名 |
-| `match` | `turnsPerHalf` / `goalScoredTurns` / `restartSetupTurns` / `kickoffTurns` | ハーフのターン数と各フェーズの滞在ターン数 |
+| `match` | `turnsPerHalf` / `goalScoredTurns` / `restartSetupTurns` / `kickoffTurns` / `offsideStopTurns` / `offsideResumeTurns` | ハーフのターン数と各フェーズ（キックオフ／ゴール後／再開準備／オフサイド停止／オフサイド再開表示）の滞在ターン数 |
 | `physics` | `dt` | 1ターンの秒数 |
 | `random` | `seed` | 決定的シミュレーションのシード |
+
+#### `ai`（当たり判定・視野・キック共通）
+
+| キー | 意味 |
+|---|---|
+| `ballControlDistance` / `trapDistance` / `trapMaxBallSpeed` | キック可能距離、トラップ可能距離、トラップ失敗になるボール速度の閾値 |
+| `tackleDistance` / `tackleSuccessChanceBase` / `tackleSuccessTechniqueSpread` | タックル判定距離と成功確率（`technique` の偏差で上下） |
+| `possessorStunTurns` / `defenderStunTurns` | タックル成立時に奪われた側／かわされた守備者が怯むターン数 |
+| `interceptDistance` / `interceptChance` | 飛行中のボール軌跡へのインターセプト判定距離と、距離0のときの成功確率上限 |
+| `passDistance` / `shootDistance` / `shootProbability` / `visionDistance` | パス候補検討距離、シュート検討距離と基準成功確率係数、選手が味方/敵/ボールを認識できる距離（視野角は `PlayerParams.vision`） |
+| `passSpeed` / `shootSpeed` / `aimErrorMaxDeg` / `passSpeedDistanceFactor` | キックの基準初速（パス/シュート）、`passAccuracy`/`shootPower` が0のときの最大キック角度誤差 [度]、パス距離1mあたりの初速上乗せ量 |
+| `moveStopThreshold` | `moveToward` の到達判定距離 |
+| `markedRadiusFactor` | パス候補のマーク済み判定距離（`tackleDistance` の倍率） |
+| `dribbleChanceBase` / `dribbleChanceMentalSpread` / `dribbleChanceVisionSpread` | 受け手がいてもあえてドリブルを選ぶ基準確率と、`mental`/`vision` による振れ幅 |
+| `offsideRiskAttemptChanceBase` / `offsideRiskAttemptChanceMentalSpread` | 選んだ受け手がオフサイド濃厚でも「試みるか」を判定する独立確率と `mental` による振れ幅 |
+| `keepDribbleEvasionBase` / `keepDribbleEvasionMentalSpread` / `keepDribbleEvasionTechniqueSpread` | 孤立ドリブルでマークされているときのゴール方向とマーカー回避方向のブレンド率と、`mental`/`technique` による振れ幅 |
+| `minHoldTurnsBase` / `minHoldTurnsMentalSpread` | ボールを受けてから最低何ターンはパス/シュート判定をせずドリブル継続にするか、`mental` による振れ幅 |
+| `dribbleSpeedPenaltyMax` | ドリブル中（`passAccuracy` が低いほど）の最大減速率 |
+| `soloDribbleSpeedFactor` / `soloDribbleSupportMargin` | 前方に味方がいない孤立ドリブル時の追加減速率と、「前方に味方がいる」とみなす最小前進差 [m] |
+
+#### `ai.clear`（自陣ゴール前でのクリア判断、`decidePossessionAction` のシュート判定の次・パス判定の前に評価）
+
+| キー | 意味 |
+|---|---|
+| `dangerDistance` / `pressureDistance` | 自ゴールからこの距離以内、かつ敵がこの距離以内にいる場合のみクリアを検討する |
+| `chanceBase` / `chanceMentalSpread` | クリアを選ぶ基準確率（`mental` が低い＝堅実な選手ほど選びやすい） |
+| `urgencyWeight` | 敵が `tackleDistance` まで詰めてきた切迫度（0〜1）に応じて `chanceBase` へ上乗せする量。奪われる寸前ほどほぼ確実にクリアする |
+| `speed` / `accuracy` | クリアキックの初速と狙いの正確度（狙いより飛距離優先で低め固定） |
+
+#### `ai.positioning`（非保持時の力の合成モデル、`computeTargetPosition`）
+
+| キー | 意味 |
+|---|---|
+| `ballPullWeight` | home からボールへ追従する上限距離の係数（`distance(home, ownGoal)` に掛ける） |
+| `repulsionWeight` / `minSpacing` / `minSpacingMentalSpread` | 味方同士が近すぎるときの反発の強さと働き始める距離、`mental` による距離の振れ幅 |
+| `coverWeight` | ボール-自ゴール線への吸着ブレンド率 |
+| `pressWeight` / `pressDistance` / `pressChanceBase` / `pressChanceSpread` | 敵ボール保持者への詰め寄り（`mental` と掛け合わせる）の強さ・射程・毎ターン実際に詰め寄るかの基準確率と振れ幅 |
+| `surroundRadius` / `lastManPressSuppression` | 複数人でプレスする際に敵保持者を囲むリングの半径（`computeApproachPoint`）、最終ラインの選手の詰め寄り確率を抑える係数 |
+| `goalCoverDangerDistance` / `goalMouthSpreadDistance` / `goalRecallWeight` | ゴール前カバー: 危険ゾーンに入る距離、横方向に広がる最大距離、自ゴールへ直接引き戻す強さ |
+| `receivingDistanceFactor` / `receivingDistanceMentalSpread` | 受け手ポジションの前進距離（`passDistance` の倍率）と `mental` による振れ幅 |
+| `markerAvoidRangeFactor` / `markerAvoidStepDistance` | 受け手ポジション付近の敵マーカー回避判定範囲と回避時の横ずれ距離 |
+| `receivingHomeBlendY` | 受け手ポジションのy座標を `homePos.y` とブレンドする比率 |
+| `backSupportChanceBase` / `backSupportMentalSpread` / `backSupportDistanceFactor` / `backSupportDistanceMentalSpread` | バックパス受けを目指す基準確率とその距離、それぞれの `mental` による振れ幅 |
+| `lateralSupportChanceBase` / `lateralSupportVisionSpread` / `lateralSupportDistanceFactor` / `lateralSupportDistanceVisionSpread` | 横サポート（逆サイドに開く）を目指す基準確率とその距離、それぞれの `vision` による振れ幅 |
+
+#### `ai.offside`（オフサイド判定。ステップ1: AI回避／ステップ2: 反則としてのターンオーバー）
+
+| キー | 意味 |
+|---|---|
+| `avoidanceEnabled` / `enforcementEnabled` | AIが受け手選定・ポジショニングでオフサイドを回避するか（既定true）／実際に反則として相手ボールに切り替えるか（既定false、詳細はTODO.md） |
+| `lineToleranceMeters` | 同一ラインとみなす許容誤差 [m] |
+| `forwardReachFraction` / `arrivalSafetyMarginSeconds` / `arrivalSampleSteps` | 受け手ポジションの前進距離上限（残り距離の倍率）、相手DFとの到達時間比較の安全余裕 [秒]、前進距離のサンプリング段階数 |
+| `kpp.forwardWeight` / `kpp.offsideOvershootWeight` / `kpp.receiverOvershootWeight` / `kpp.arrivalDeficitWeight` / `kpp.markingWeight` | 統一スコア関数 `scoreReceivingSpot` の重み: 前進度の報酬、`computeTargetPosition`側/`selectPassReceiver`側それぞれのオフサイドライン超過ペナルティ、到達時間の遅れペナルティ、マーク圧力ペナルティ |
+
+#### `ai.collision`（選手同士の押し出し）
+
+| キー | 意味 |
+|---|---|
+| `physicalSpread` | 押し出し量の配分（0.5からの振れ幅）に対する、相手との `physical` 差1あたりの効き幅 |
+| `minPushRatio` | 配分比の下限（上限は `1 - minPushRatio`）。`physical` 差が極端でも一方が完全に動かなくなるのを防ぐ安全マージン |
+
+#### `ai.intent`（意図ベース状態遷移、マイルストーンN。`PlayerIntent` の最低/最大維持ターン数）
+
+| キー | 意味 |
+|---|---|
+| `chaseLooseBallMaxDurationTurns` | `ChaseLooseBall` 意図に切り替わってからこれを超えたターン数で強制的に再判断する |
+| `supportMinDurationTurns` / `supportMaxDurationTurns` | `Support`/`BackSupport`/`LateralSupport` 意図の最低維持ターン数・強制再判断までのターン数 |
+| `coverMinDurationTurns` / `coverMaxDurationTurns` | `Cover` 意図（守備の基本ポジショニング）の最低維持ターン数・強制再判断までのターン数 |
+| `pressMinDurationTurns` / `pressMaxDurationTurns` | `Press` 意図の最低維持ターン数・強制再判断までのターン数 |
 
 `team.formation` は**自陣基準の比率**。`x` は `width/2`、`y` は `length/2` に対する比率で、`y = -1` が自ゴール側・`+1` が敵ゴール側。チームB は x・y ともに符号を反転して実座標に変換される。
 
